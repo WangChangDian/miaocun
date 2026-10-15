@@ -1,0 +1,76 @@
+秒存 · 第三方开源组件声明
+=================================
+
+更新日期：2026-10-14
+对应版本：1.8.19
+
+本软件自身代码未开源，但使用了以下开源项目。所有组件均在本机运行，
+版权归各自作者所有，依其原始许可证分发；我们未对组件源码做修改。
+
+更多信息（含在线版本）：https://music.aiyun-jing.com:8443/download/opensource.html
+
+
+一、解析与下载组件
+------------------
+
+1) yt-dlp
+   版本：2026.08.19
+   来源：https://github.com/yt-dlp/yt-dlp
+   许可证：Unlicense（公共领域）
+
+2) XHS-Downloader（小红书解析）
+   版本：提交 3261312（短哈希）
+   来源：https://github.com/JoeanAmier/XHS-Downloader
+   许可证：GNU GPL-3.0
+
+3) KS-Downloader（快手解析）
+   版本：提交 7c493d1（短哈希）
+   来源：https://github.com/JoeanAmier/KS-Downloader
+   许可证：GNU GPL-3.0
+
+4) FFmpeg（音视频合并 / 转码）
+   macOS 版：imageio-ffmpeg 提供的静态构建（FFmpeg 7.1，GPL 构建）
+            https://github.com/imageio/imageio-ffmpeg
+   Windows 版：BtbN/FFmpeg-Builds 的 win64 LGPL 构建
+            https://github.com/BtbN/FFmpeg-Builds
+   许可证：GPL / LGPL（视构建）
+   源码：https://ffmpeg.org/download.html
+
+
+二、运行时与浏览器内核
+----------------------
+
+5) Python（桌面端内置运行时）
+   版本：CPython 3.13.16（python-build-standalone）
+   来源：https://github.com/astral-sh/python-build-standalone
+   许可证：Python Software Foundation License
+
+6) Playwright + Chromium（登录窗口 / 页面解析）
+   来源：https://playwright.dev · https://www.chromium.org
+   许可证：Apache-2.0 / BSD-3-Clause 等
+
+
+三、Android 端组件
+------------------
+
+7) youtubedl-android（library / ffmpeg）
+   版本：0.18.1
+   来源：https://github.com/JunkFood02/youtubedl-android
+   许可证：GNU GPL-3.0（其内部同样包含 yt-dlp: Unlicense）
+
+8) QuickJS（JS 运行时）        https://bellard.org/quickjs   许可证：MIT
+9) OkHttp                     https://github.com/square/okhttp  许可证：Apache-2.0
+10) AndroidX / Jetpack Compose https://developer.android.com    许可证：Apache-2.0
+11) Kotlin 标准库              https://kotlinlang.org           许可证：Apache-2.0
+
+
+四、关于 GPL 组件的说明
+----------------------
+
+- XHS-Downloader、KS-Downloader、youtubedl-android 采用 GPL-3.0；
+  macOS 版内置的 FFmpeg 为 GPL 构建。
+- 它们均以独立可执行文件 / 独立进程的形式与主程序一起分发，
+  源码可在上述仓库地址获取。
+- 如需这些组件对应版本的完整源码包，可通过应用内「设置 → 提建议」联系我们。
+
+感谢所有开源作者。

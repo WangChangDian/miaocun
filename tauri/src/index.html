@@ -1,0 +1,1496 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>秒存</title>
+  <style>
+    :root {
+      /* 主题配色（与安卓端一致：浅橙 / 浅绿），JS 里按用户选择覆盖 */
+      --bg-top: #e9f7ef;
+      --bg-bottom: #f7fbf8;
+      --card: #ffffff;
+      --primary: #4caf7d;
+      --primary-soft: #d9f2e3;
+      --gradient-a: #7cd8a6;
+      --gradient-b: #3fa46d;
+      --chip-text: #12432b;
+      --text: #1b2a21;
+      --muted: #5c6f63;
+      --ok: #2e7d32;
+      --warn: #e65100;
+      --line: rgba(0, 0, 0, 0.08);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: linear-gradient(var(--bg-top), var(--bg-bottom)) fixed;
+      color: var(--text);
+      padding: 20px 22px 32px;
+    }
+    header { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+    header h1 { font-size: 22px; margin: 0; }
+    header .sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
+    .badge {
+      margin-left: auto; font-size: 12px; padding: 4px 10px; border-radius: 999px;
+      background: var(--primary-soft); color: var(--chip-text);
+    }
+    .card {
+      background: var(--card); border-radius: 18px; padding: 16px;
+      border: 1px solid var(--line);
+      box-shadow: 0 3px 12px rgba(0, 0, 0, 0.07); margin-bottom: 14px;
+    }
+    textarea {
+      width: 100%; min-height: 110px; resize: vertical; border-radius: 12px;
+      border: 1px solid #e7d8cb; padding: 10px 12px; font-size: 14px; color: var(--text);
+      background: #fffdfb; outline: none;
+    }
+    textarea:focus { border-color: var(--primary); }
+    .row { display: flex; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
+    button {
+      border: none; border-radius: 12px; padding: 9px 18px; font-size: 14px;
+      cursor: pointer; background: #f3e9e0; color: var(--text);
+    }
+    button.primary { background: linear-gradient(90deg, var(--gradient-a), var(--gradient-b)); color: #fff; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .progress { height: 8px; border-radius: 999px; background: #f0e4d8; overflow: hidden; margin-top: 10px; }
+    .progress > div { height: 100%; width: 0; background: var(--primary); transition: width 0.2s; }
+    .muted { color: var(--muted); font-size: 12px; }
+    .chip {
+      display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 999px;
+      background: var(--primary-soft); color: var(--chip-text); margin-right: 6px;
+    }
+    /* 卡片之间不画分隔线（与安卓 / Mac 一致，靠间距区分） */
+    .history-item { display: flex; gap: 10px; align-items: center; padding: 8px 0; }
+    .history-block + .history-block { margin-top: 10px; }
+    .history-item .title { font-size: 13px; }
+    .history-item .meta { font-size: 11px; color: var(--muted); }
+    .empty { color: var(--muted); font-size: 13px; }
+    /* 版本更新卡片 */
+    .update-head { display: flex; align-items: center; gap: 12px; }
+    .update-icon {
+      width: 46px; height: 46px; border-radius: 14px; flex: none;
+      background: linear-gradient(135deg, #ffb27a, #f97316);
+      color: #fff; font-size: 24px; font-weight: 700;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .update-version { font-size: 22px; font-weight: 700; }
+    .update-info {
+      background: var(--primary-soft); border-radius: 12px; padding: 10px 14px;
+      font-size: 12px; color: #7a4a1c; margin: 12px 0; line-height: 1.7;
+    }
+    .update-info .new { color: #d2690f; font-weight: 600; }
+    .update-list { margin: 0; padding-left: 18px; font-size: 13px; line-height: 1.8; max-height: 200px; overflow: auto; }
+    .update-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 14px; }
+    pre#log {
+      max-height: 200px; overflow: auto; background: #fbf4ee; border-radius: 10px;
+      padding: 10px; font-size: 11px; line-height: 1.5; color: #6b5a4b; white-space: pre-wrap;
+    }
+    h2 { font-size: 15px; margin: 0 0 10px; }
+    /* 弹窗 */
+    .modal-mask {
+      position: fixed; inset: 0; background: rgba(0, 0, 0, 0.35);
+      display: flex; align-items: center; justify-content: center; z-index: 50;
+    }
+    .modal {
+      background: #fff; border-radius: 18px; padding: 20px 22px; max-width: 420px;
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.18);
+    }
+    /* 记录之间更清晰的分隔线 */
+    .history-item { padding: 12px 4px 6px; }
+    /* 缩略图（与安卓 / Mac 一致）：图片 / 视频 / PDF 出图，音频出音符；带细边框 */
+    .thumb-strip { display: flex; gap: 10px; overflow-x: auto; padding: 2px 4px 6px; }
+    .thumb-tile { width: 86px; flex: 0 0 auto; display: flex; flex-direction: column; gap: 3px; align-items: center; }
+    .thumb-box {
+      position: relative; width: 86px; height: 86px; border-radius: 10px; overflow: hidden;
+      border: 1px solid var(--line); background: rgba(0, 0, 0, 0.06);
+      display: flex; align-items: center; justify-content: center; cursor: zoom-in;
+    }
+    .thumb-box img, .thumb-box video { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .thumb-box .glyph { font-size: 24px; color: var(--muted); }
+    .thumb-box .play {
+      position: absolute; width: 30px; height: 30px; border-radius: 50%;
+      background: rgba(0, 0, 0, 0.45); color: #fff; display: flex; align-items: center;
+      justify-content: center; font-size: 12px; padding-left: 2px;
+    }
+    .thumb-size { font-size: 10px; color: var(--muted); }
+    .file-row { display: flex; align-items: center; gap: 8px; padding: 3px 4px; }
+    .file-row .name { font-size: 11px; color: var(--muted); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .file-row .size { font-size: 10px; color: var(--muted); }
+    /* 图标操作按钮（内联 SVG，Lucide 风格 · MIT 开源）：打开 / 分享 / 在文件夹中显示 / 删除 */
+    .icon-btn {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 24px; height: 24px; border-radius: 7px; border: none; padding: 0;
+      background: transparent; color: var(--primary); cursor: pointer;
+    }
+    .icon-btn:hover { background: var(--primary-soft); }
+    .icon-btn.danger { color: #c0392b; }
+    .icon-btn.danger:hover { background: rgba(192, 57, 43, 0.12); }
+    .icon-btn svg {
+      width: 14px; height: 14px; fill: none; stroke: currentColor;
+      stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+    }
+    .actions { display: flex; gap: 2px; align-items: center; }
+    .thumb-actions { display: flex; gap: 2px; justify-content: center; }
+    /* 放大预览浮层 */
+    .preview { position: fixed; inset: 0; z-index: 60; background: rgba(10, 10, 12, 0.95); display: flex; flex-direction: column; }
+    .preview-bar { display: flex; align-items: center; gap: 10px; padding: 10px 14px; color: #fff; }
+    .preview-bar .name { font-size: 14px; font-weight: 600; max-width: 46%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .preview-bar .size { font-size: 11px; color: #b9b9c0; }
+    .preview-bar button { background: rgba(255, 255, 255, 0.14); color: #fff; border: none; border-radius: 999px; padding: 6px 14px; cursor: pointer; font-size: 12px; }
+    .preview-body { flex: 1; display: flex; align-items: center; justify-content: center; overflow: auto; position: relative; }
+    .preview-body img { max-width: 96%; max-height: 92%; cursor: zoom-in; }
+    .preview-body video { max-width: 94%; max-height: 92%; }
+    .preview-body audio { width: 60%; min-width: 320px; }
+    .preview-body iframe { width: 96%; height: 92%; border: none; background: #fff; border-radius: 8px; }
+    .preview-nav {
+      position: absolute; top: 50%; transform: translateY(-50%); font-size: 22px; color: #fff;
+      background: rgba(0, 0, 0, 0.35); border: none; border-radius: 50%; width: 44px; height: 44px; cursor: pointer;
+    }
+    .preview-nav.prev { left: 16px; }
+    .preview-nav.next { right: 16px; }
+    .preview-counter { position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%); color: #b9b9c0; font-size: 12px; }
+    /* 卡片与控件再打磨一点：更柔和的阴影、稍大圆角、hover 反馈 */
+    .card { border-radius: 20px; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.05); transition: box-shadow .2s; }
+    .card:hover { box-shadow: 0 6px 22px rgba(0, 0, 0, 0.07); }
+    button { border-radius: 12px; transition: transform .12s, filter .12s; }
+    button:hover:not(:disabled) { filter: brightness(0.97); }
+    button:active:not(:disabled) { transform: scale(0.98); }
+    textarea, input, select { border-radius: 12px; }
+    body { line-height: 1.6; }
+    /* 设置 + Cookie 管理 */
+    .field { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+    .field label { width: 74px; font-size: 13px; color: var(--muted); flex: none; }
+    .field input, .field select {
+      flex: 1; min-width: 180px; border-radius: 10px; border: 1px solid var(--line);
+      padding: 7px 10px; font-size: 13px; background: #fff; color: var(--text); outline: none;
+    }
+    .field input:focus, .field select:focus { border-color: var(--primary); }
+    .cookie-row {
+      display: flex; align-items: center; gap: 8px; padding: 7px 0;
+      border-bottom: 1px dashed var(--line); flex-wrap: wrap;
+    }
+    .cookie-row:last-child { border-bottom: none; }
+    .cookie-row .name { flex: 1; font-size: 13px; min-width: 130px; }
+    .cookie-row .state { font-size: 12px; margin-left: 8px; }
+    .cookie-row button { padding: 5px 12px; font-size: 12px; }
+    /* 云端那一组按钮前加一条细竖线，视觉上区分「本机操作 / 云端操作」 */
+    .cookie-row .cloud-group { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding-left: 10px; border-left: 1px dashed var(--line); }
+    .cookie-row button.sync-active { background: var(--primary-soft); border-color: var(--primary); font-weight: 600; }
+    .cookie-row .cloud-state { font-size: 11px; color: var(--muted); }
+    .cookie-hint {
+      background: var(--primary-soft); color: var(--chip-text); border-radius: 12px;
+      padding: 10px 12px; font-size: 13px; margin: 8px 0; display: none;
+    }
+    .update-icon { background: linear-gradient(135deg, var(--gradient-a), var(--gradient-b)); }
+    .sync-row { display: flex; align-items: center; gap: 6px; padding: 6px 0; border-bottom: 1px dashed var(--line); flex-wrap: wrap; }
+    .sync-row:last-child { border-bottom: none; }
+    .sync-row .name { flex: 1; font-size: 13px; min-width: 120px; }
+    .sync-row button { padding: 4px 10px; font-size: 12px; }
+    /* 当前正在使用的云端登录态（手机端 / 电脑端）高亮 */
+    .sync-row button.sync-active { background: var(--primary-soft); border-color: var(--primary); font-weight: 600; }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>秒存</h1>
+      <div class="sub">抖音 / 快手 / 小红书 / 视频号 / B 站 / 微博 / TikTok / X / YouTube · 粘贴即可下载（Tauri 版）</div>
+    </div>
+    <div class="badge" id="engineBadge">引擎检查中…</div>
+    <button id="viewToggleBtn" style="margin-left:8px">设置</button>
+    <button id="themeBtn" style="margin-left:8px">换橙色</button>
+    <button id="checkUpdateBtn" style="margin-left:8px">检查更新</button>
+  </header>
+
+  <!-- 版本更新卡片：发现新版本时显示，点「前往下载」用系统浏览器打开下载地址 -->
+  <div class="card" id="updateCard" style="display:none">
+    <div class="update-head">
+      <div class="update-icon">↑</div>
+      <div>
+        <div class="muted">发现新版本</div>
+        <div class="update-version" id="updateVersion">–</div>
+      </div>
+    </div>
+    <div class="update-info">
+      <div>当前版本 <span id="updateCurrent">–</span></div>
+      <div class="new">最新版本 <span id="updateLatest">–</span><span id="updateSize"></span></div>
+    </div>
+    <h2 style="margin-bottom:6px">更新内容</h2>
+    <ul class="update-list" id="updateChangelog"></ul>
+    <div class="update-actions">
+      <button id="updateLater">稍后</button>
+      <button class="primary" id="updateDownload">前往下载</button>
+    </div>
+  </div>
+
+  <div class="card" id="setupCard" style="display:none">
+    <h2>首次使用：初始化解析引擎</h2>
+    <div class="muted">将创建 Python 虚拟环境、安装 yt-dlp / Playwright 与内置浏览器内核（约 800MB，存放在应用数据目录）。</div>
+    <div class="row">
+      <button class="primary" id="bootstrapBtn">开始初始化</button>
+    </div>
+    <pre id="log" style="margin-top:12px"></pre>
+  </div>
+
+  <div id="homeView">
+  <div class="card">
+    <h2>作品链接 / 分享文本</h2>
+    <textarea id="input" placeholder="粘贴作品链接、分享文本，或 mp4 等文件直链…"></textarea>
+    <div class="row">
+      <button id="pasteBtn">粘贴</button>
+      <button class="primary" id="downloadBtn">下载</button>
+      <!-- 主页 / 收藏夹链接：抓取该主页作品后逐条下载（需要先在桌面端登录对应平台） -->
+      <button id="batchBtn" title="主页 / 收藏夹链接：抓取最近 20 条作品并逐条下载">批量下载</button>
+      <button id="folderBtn">打开下载目录</button>
+    </div>
+    <div class="muted" style="margin-top:8px">
+      「批量下载」用于<b>主页 / 收藏夹</b>链接（抖音、小红书）：粘贴主页链接后点它，会列出该主页最近的作品让你勾选，
+      再逐条下载（需要先在「设置 → 登录态管理」里登录对应平台）。
+    </div>
+  </div>
+
+  <div class="card" id="taskCard" style="display:none">
+    <h2 id="taskTitle">任务</h2>
+    <div class="muted" id="taskStage">准备中</div>
+    <div class="progress"><div id="taskBar"></div></div>
+    <div class="muted" id="taskDetail" style="margin-top:8px"></div>
+    <!-- 完成后的缩略图（图片点开放大、视频/音频点开即播） -->
+    <div id="taskFiles"></div>
+    <div class="row" id="taskActions" style="display:none">
+      <!-- 与下载记录一致：打开 / 分享 / 在资源管理器中显示都用图标（内容由 JS 填充） -->
+      <button class="icon-btn" id="taskOpenBtn" title="打开" aria-label="打开"></button>
+      <button class="icon-btn" id="taskShareBtn" title="分享" aria-label="分享"></button>
+      <button class="icon-btn" id="taskRevealBtn" title="在资源管理器中显示" aria-label="在资源管理器中显示"></button>
+      <button class="icon-btn danger" id="taskDeleteBtn" title="删除这次下载及其文件" aria-label="删除这次下载及其文件"></button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div style="display:flex;align-items:center;gap:8px">
+      <h2 style="margin:0">下载记录</h2>
+      <button id="clearHistoryBtn" style="margin-left:auto;padding:5px 12px;font-size:12px">清空</button>
+    </div>
+    <div id="history" class="empty" style="margin-top:10px">还没有下载记录</div>
+  </div>
+
+  </div>
+
+  <div id="settingsView" style="display:none">
+  <!-- 设置 + Cookie 管理（与 Mac/安卓端对齐） -->
+  <div class="card" id="settingsCard">
+    <div style="display:flex;align-items:center;">
+      <h2>设置</h2>
+      <button id="settingsToggle" style="margin-left:auto;padding:5px 12px;font-size:12px">收起</button>
+    </div>
+    <div id="settingsBody">
+      <div class="field"><label>保存目录</label><input id="setOutDir" placeholder="留空使用默认：下载/视频下载" /><button id="pickFolderBtn">选择…</button></div>
+      <div class="field"><label>命名模板</label><input id="setNameTemplate" placeholder="{author}-{title}" /></div>
+      <div class="field"><label>画质上限</label>
+        <select id="setMaxHeight">
+          <option value="0">最高画质</option>
+          <option value="1080">≤1080P</option>
+          <option value="720">≤720P</option>
+        </select>
+      </div>
+      <div class="field"><label>代理地址</label><input id="setProxy" placeholder="留空自动读系统代理，如 http://127.0.0.1:7890" /></div>
+      <div class="row" style="margin-top:4px">
+        <button class="primary" id="saveSettingsBtn">保存设置</button>
+        <span class="muted" id="settingsHint"></span>
+      </div>
+
+      <h2 style="margin-top:18px">登录态管理</h2>
+      <div class="muted" style="margin-bottom:6px">
+        登录态只保存在本机，也可以登录账号后加密同步到云端。X / YouTube 必须登录；Vimeo / QQ 音乐等多数内容也需要登录；
+        抖音不用登录也能下载（但「主页批量」需要登录）。
+      </div>
+      <div id="cookieList" class="muted">正在读取…</div>
+      <div class="cookie-hint" id="cookieHint">
+        <span id="cookieHintText"></span>
+        <span style="float:right">
+          <button class="primary" id="cookieLoginSave">完成</button>
+          <button id="cookieLoginCancel">取消</button>
+        </span>
+      </div>
+    </div>
+
+      <h2 style="margin-top:18px">账号 · 云端登录态同步</h2>
+    <div id="accountLoggedOut">
+      <div class="field"><label>手机号</label><input id="accountPhone" placeholder="11 位手机号，用于接收验证码" /></div>
+      <div class="field"><label>验证码</label>
+        <input id="accountCode" placeholder="短信验证码" />
+        <button id="sendCodeBtn">获取验证码</button>
+        <button class="primary" id="accountLoginBtn">登录</button>
+      </div>
+      <div class="muted">
+        登录后：一端登录过的平台，其它端可以直接用（登录态加密保存、只有你能看到、可一键清空）。不登录也不影响现有功能。
+      </div>
+    </div>
+    <div id="accountLoggedIn" style="display:none">
+      <div class="field"><label>已登录</label><span id="accountInfo" style="flex:1"></span>
+        <button id="accountLogoutBtn">退出登录</button>
+      </div>
+      <div class="row">
+        <button id="pullAllBtn">拉取全部云端登录态到本地</button>
+        <button id="uploadAllBtn">同步本机登录态到云端</button>
+        <button id="clearCloudBtn">清空云端登录态</button>
+        <span class="muted" id="accountHint"></span>
+      </div>
+      <div class="muted" style="margin-top:6px">
+        登录账号后各平台登录态会自动回填。想换用另一端的会话（例如用电脑端登录态下 B 站 4K），点对应平台的「使用手机登录态 / 使用电脑端登录态」，
+        当前使用的那一端会高亮；那一端没有登录态时按钮是灰的。也可以点「拉取云端登录态」直接取云端最新的一份，或用「拉取全部云端登录态到本地」一次拉完。
+      </div>
+    </div>
+  </div>
+
+  <!-- 提建议 / 联系官方 -->
+  <div class="card" id="feedbackCard">
+    <h2>提建议 / 联系官方</h2>
+    <div class="muted" style="margin-bottom:6px">反馈问题时请附上链接，方便我们复现。</div>
+    <textarea id="feedbackText" style="min-height:80px" placeholder="遇到问题或有建议，写在这里。请尽量附上出问题的链接，我们才能针对性地定位（会自动带上版本号）"></textarea>
+    <div class="field" style="margin-top:8px"><label>联系方式</label><input id="feedbackContact" placeholder="手机号 / 邮箱（可留空）" /></div>
+    <div class="row"><button class="primary" id="feedbackBtn">提交</button><span class="muted" id="feedbackHint"></span></div>
+  </div>
+
+  </div>
+
+  <!-- 放大预览：图片可翻页缩放、视频/音频进来即播、PDF 直接用内置阅读器打开
+       （必须放在脚本之前，脚本里要直接绑定按钮事件） -->
+  <div id="preview" class="preview" style="display:none">
+    <div class="preview-bar">
+      <span class="name" id="previewName"></span>
+      <span class="size" id="previewSize"></span>
+      <span style="flex:1"></span>
+      <button id="previewReveal">在文件夹中显示</button>
+      <button id="previewOpen">打开</button>
+      <button id="previewClose">关闭</button>
+    </div>
+    <div class="preview-body" id="previewBody"></div>
+  </div>
+
+  <!-- 清空下载记录：三选一（取消 / 仅清空记录 / 连文件一起删） -->
+  <div class="modal-mask" id="clearHistoryModal" style="display:none">
+    <div class="modal">
+      <h2 style="margin-top:0">清空下载记录</h2>
+      <div class="muted">要连下载好的文件一起删除吗？删除后无法恢复。</div>
+      <div class="row" style="justify-content:flex-end;margin-top:16px">
+        <button id="clearHistoryCancel">取消</button>
+        <button id="clearHistoryOnly">仅清空记录</button>
+        <button class="primary" id="clearHistoryWithFiles">清空并删除文件</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const { invoke } = window.__TAURI__.core;
+    const { listen } = window.__TAURI__.event;
+
+    let currentTaskId = null;
+    let currentFile = '';
+    const $ = (id) => document.getElementById(id);
+
+    function setBadge(text, color) {
+      const badge = $('engineBadge');
+      badge.textContent = text;
+      badge.style.background = color || 'var(--primary-soft)';
+    }
+
+    async function refreshEngine() {
+      const info = await invoke('engine_info');
+      if (!info.python || !info.bridge) {
+        setBadge('未初始化', '#ffe0cc');
+        $('setupCard').style.display = 'block';
+        return;
+      }
+      try {
+        await invoke('engine_start');
+        setBadge('引擎已启动', '#d9f2e3');
+        invoke('engine_send', { payload: { id: 'status', cmd: 'engine_status' } });
+        checkUpdate(); // 冷启动检查新版本（Windows 端）
+        // 解析引擎随应用版本一起更新（内置运行时），客户端不再做引擎热更新
+      } catch (error) {
+        setBadge('引擎启动失败', '#ffd9d9');
+        $('setupCard').style.display = 'block';
+        $('log').textContent = String(error);
+      }
+    }
+
+    // ---------------- 缩略图 / 预览（与安卓、Mac 对齐） ----------------
+    const MEDIA_EXT = {
+      image: ['jpg', 'jpeg', 'png', 'webp', 'gif', 'heic', 'heif', 'avif', 'bmp'],
+      video: ['mp4', 'mov', 'mkv', 'webm', 'm4v', '3gp', 'avi', 'ts'],
+      audio: ['mp3', 'm4a', 'aac', 'flac', 'wav', 'opus', 'ogg'],
+      pdf: ['pdf'],
+    };
+    const fileSizes = new Map();   // path -> bytes（打开预览时显示大小）
+
+    function mediaKind(path) {
+      const ext = String(path || '').split('.').pop().toLowerCase();
+      for (const [kind, list] of Object.entries(MEDIA_EXT)) {
+        if (list.includes(ext)) return kind;
+      }
+      return 'other';
+    }
+
+    function fileUrl(path) {
+      try { return window.__TAURI__.core.convertFileSrc(path); } catch (_) { return path; }
+    }
+
+    function fileName(path) {
+      return String(path || '').split(/[\\/]/).pop();
+    }
+
+    function playBadge() {
+      const badge = document.createElement('div');
+      badge.className = 'play';
+      badge.textContent = '▶';
+      return badge;
+    }
+
+    // 图标按钮用的内联 SVG（Lucide 图标，MIT 协议，无外部依赖）；title/aria-label 提供提示与无障碍描述
+    const ICONS = {
+      open: '<svg viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>',
+      share: '<svg viewBox="0 0 24 24"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>',
+      folder: '<svg viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>',
+      trash: '<svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>',
+    };
+
+    function iconButton(name, title, onClick, danger) {
+      const button = document.createElement('button');
+      button.className = danger ? 'icon-btn danger' : 'icon-btn';
+      button.title = title;
+      button.setAttribute('aria-label', title);
+      button.innerHTML = ICONS[name] || '';
+      button.addEventListener('click', onClick);
+      return button;
+    }
+
+    /** 文件格式标签：优先扩展名，没有就按类型兜底（如 MP4 / JPG / PDF） */
+    function formatLabel(file) {
+      const name = fileName(file);
+      const ext = name.includes('.') ? name.split('.').pop().toUpperCase() : '';
+      if (ext && ext.length <= 5) return ext;
+      return { video: 'MP4', image: 'IMAGE', audio: 'AUDIO', pdf: 'PDF' }[mediaKind(file)] || 'FILE';
+    }
+
+    /** 缩略图条：图片 / 视频 / PDF 出图，音频出音符；每个文件下面显示格式、大小与操作按钮 */
+    function buildStrip(files, onDelete) {
+      const strip = document.createElement('div');
+      strip.className = 'thumb-strip';
+      files.forEach((file, index) => {
+        const kind = mediaKind(file);
+        const tile = document.createElement('div');
+        tile.className = 'thumb-tile';
+        const box = document.createElement('div');
+        box.className = 'thumb-box';
+
+        if (kind === 'image' || kind === 'video') {
+          const media = document.createElement(kind === 'image' ? 'img' : 'video');
+          media.src = fileUrl(file);
+          if (kind === 'video') {
+            media.muted = true;
+            media.preload = 'metadata';
+            media.playsInline = true;
+            // 让内核把第一帧画出来当封面（0.5 秒处，避免黑屏）
+            media.addEventListener('loadeddata', () => {
+              try { media.currentTime = 0.5; } catch (_) {}
+            }, { once: true });
+            box.appendChild(media);
+            box.appendChild(playBadge());
+          } else {
+            media.loading = 'lazy';
+            box.appendChild(media);
+          }
+        } else if (kind === 'audio') {
+          const glyph = document.createElement('div');
+          glyph.className = 'glyph';
+          glyph.textContent = '♪';
+          box.appendChild(glyph);
+          box.appendChild(playBadge());
+        } else {
+          const glyph = document.createElement('div');
+          glyph.className = 'glyph';
+          glyph.textContent = kind === 'pdf' ? 'PDF' : '📄';
+          box.appendChild(glyph);
+        }
+
+        box.title = fileName(file);
+        box.addEventListener('click', () => showPreview(files, index));
+        const size = document.createElement('div');
+        size.className = 'thumb-size';
+        size.textContent = `${formatLabel(file)} · ${formatBytes(fileSizes.get(file) || 0)}`;
+        tile.appendChild(box);
+        tile.appendChild(size);
+        // 打开 / 分享 /（历史记录里还有）删除：图标按钮居中排在文件下面
+        const actions = document.createElement('div');
+        actions.className = 'thumb-actions';
+        actions.appendChild(iconButton('open', '打开', () => invoke('open_path', { path: file }).catch((error) => window.alert('打开失败：' + error))));
+        actions.appendChild(iconButton('share', '分享', () => invoke('share_file', { path: file }).catch((error) => window.alert('分享失败：' + error))));
+        if (onDelete) {
+          actions.appendChild(iconButton('trash', '删除这个文件', () => onDelete(file), true));
+        }
+        tile.appendChild(actions);
+        strip.appendChild(tile);
+      });
+      return strip;
+    }
+
+    /** 不能预览的文件（安装包 / 压缩包 / 文本等）：保持原来的行样式，补上大小 */
+    function buildFileRow(file, onDelete) {
+      const row = document.createElement('div');
+      row.className = 'file-row';
+      const name = document.createElement('div');
+      name.className = 'name';
+      name.textContent = fileName(file);
+      const size = document.createElement('div');
+      size.className = 'size';
+      size.textContent = formatBytes(fileSizes.get(file) || 0);
+      row.appendChild(name);
+      row.appendChild(size);
+      // 打开 / 在文件夹中显示 / 分享 /（历史记录里还有）删除：图标按钮
+      const actions = document.createElement('div');
+      actions.className = 'actions';
+      actions.appendChild(iconButton('open', '打开', () => invoke('open_path', { path: file }).catch((error) => window.alert('打开失败：' + error))));
+      actions.appendChild(iconButton('folder', '在资源管理器中显示', () => invoke('reveal_file', { path: file }).catch((error) => window.alert('打开失败：' + error))));
+      actions.appendChild(iconButton('share', '分享', () => invoke('share_file', { path: file }).catch((error) => window.alert('分享失败：' + error))));
+      if (onDelete) {
+        actions.appendChild(iconButton('trash', '删除这个文件', () => onDelete(file), true));
+      }
+      row.appendChild(actions);
+      return row;
+    }
+
+    async function refreshHistory() {
+      const items = await invoke('read_history');
+      const container = $('history');
+      if (!Array.isArray(items) || items.length === 0) {
+        container.className = 'empty';
+        container.textContent = '还没有下载记录';
+        return;
+      }
+      container.className = '';
+      const sliced = items.slice(0, 50);
+      const allPaths = [];
+      sliced.forEach((item) => (item.files || []).forEach((file) => allPaths.push(file)));
+      let sizes = [];
+      try { sizes = await invoke('file_sizes', { paths: allPaths }); } catch (_) { sizes = []; }
+      allPaths.forEach((path, index) => fileSizes.set(path, sizes[index] || 0));
+
+      container.innerHTML = '';
+      sliced.forEach((item, itemIndex) => {
+        const files = (item.files || []).filter(Boolean);
+        const info = item.media_info || {};
+        const quality = [info.width && info.height ? `${info.width}×${info.height}` : '', info.duration ? `${info.duration}s` : '']
+          .filter(Boolean).join(' · ');
+        const extra = files.length > 1 ? ` · 共 ${files.length} 个文件` : '';
+
+        const block = document.createElement('div');
+        block.className = 'history-block';
+        const head = document.createElement('div');
+        head.className = 'history-item';
+        const text = document.createElement('div');
+        text.style.flex = '1';
+        const title = document.createElement('div');
+        title.className = 'title';
+        const chip = document.createElement('span');
+        chip.className = 'chip';
+        chip.textContent = platformLabel(item.platform);
+        title.appendChild(chip);
+        title.appendChild(document.createTextNode(item.title || fileName(files[0] || '')));
+        const meta = document.createElement('div');
+        meta.className = 'meta';
+        meta.textContent = `${item.finished_at || ''} · ${quality}${extra}`.replace(/^ · /, '');
+        text.appendChild(title);
+        text.appendChild(meta);
+        head.appendChild(text);
+        // 打开 / 在资源管理器中显示 / 分享 / 删除（图标按钮；删除在最后，无确认，连同源文件一起删）
+        const headActions = document.createElement('div');
+        headActions.className = 'actions';
+        if (files.length) {
+          headActions.appendChild(iconButton('open', '打开', () => invoke('open_path', { path: files[0] }).catch((error) => window.alert('打开失败：' + error))));
+          headActions.appendChild(iconButton('folder', '在资源管理器中显示', () => invoke('reveal_file', { path: files[0] }).catch((error) => window.alert('打开失败：' + error))));
+          headActions.appendChild(iconButton('share', '分享', () => invoke('share_file', { path: files[0] }).catch((error) => window.alert('分享失败：' + error))));
+        }
+        headActions.appendChild(iconButton('trash', '删除这条记录及其文件', async () => {
+          try {
+            await invoke('delete_history_item', { index: itemIndex, deleteFiles: true });
+          } catch (error) {
+            window.alert('删除失败：' + error);
+          }
+          refreshHistory();
+        }, true));
+        head.appendChild(headActions);
+        block.appendChild(head);
+
+        const previewable = files.filter((file) => mediaKind(file) !== 'other');
+        const others = files.filter((file) => mediaKind(file) === 'other');
+        // 单个文件删除：从记录里移除；全部删光后记录一并删除
+        const deleteFile = async (file) => {
+          try {
+            await invoke('delete_history_file', { index: itemIndex, path: file });
+          } catch (error) {
+            window.alert('删除失败：' + error);
+          }
+          refreshHistory();
+        };
+        if (previewable.length) block.appendChild(buildStrip(previewable, deleteFile));
+        others.forEach((file) => block.appendChild(buildFileRow(file, deleteFile)));
+        container.appendChild(block);
+      });
+    }
+
+    // ---------------- 放大预览 ----------------
+    let previewFiles = [];
+    let previewIndex = 0;
+
+    /** 任务卡片里某个文件所在的 history.json 下标；找不到返回 -1 */
+    async function findHistoryIndexForFile(file) {
+      try {
+        const items = await invoke('read_history');
+        return items.findIndex((item) => (item.files || []).includes(file));
+      } catch (_) {
+        return -1;
+      }
+    }
+
+    /** 任务完成后：在当前任务卡片里也显示缩略图（与历史记录一致，含删除） */
+    let taskFileList = [];
+    async function renderTaskFiles(files) {
+      const container = $('taskFiles');
+      container.innerHTML = '';
+      taskFileList = (files || []).filter(Boolean);
+      if (!taskFileList.length) {
+        // 文件都删完了：卡片收起
+        $('taskCard').style.display = 'none';
+        currentFile = '';
+        return;
+      }
+      try {
+        const sizes = await invoke('file_sizes', { paths: taskFileList });
+        taskFileList.forEach((path, index) => fileSizes.set(path, sizes[index] || 0));
+      } catch (_) { /* 取不到大小就不显示，不影响预览 */ }
+      // 单个文件删除：同步更新卡片与记录；全部删光时卡片收起
+      const deleteTaskFile = async (file) => {
+        const index = await findHistoryIndexForFile(file);
+        if (index >= 0) {
+          try {
+            await invoke('delete_history_file', { index, path: file });
+          } catch (error) {
+            window.alert('删除失败：' + error);
+          }
+        }
+        currentFile = taskFileList.includes(currentFile) && currentFile !== file ? currentFile : (taskFileList.find((item) => item !== file) || '');
+        renderTaskFiles(taskFileList.filter((item) => item !== file));
+        refreshHistory();
+      };
+      const previewable = taskFileList.filter((file) => mediaKind(file) !== 'other');
+      const others = taskFileList.filter((file) => mediaKind(file) === 'other');
+      if (previewable.length) container.appendChild(buildStrip(previewable, deleteTaskFile));
+      others.forEach((file) => container.appendChild(buildFileRow(file, deleteTaskFile)));
+    }
+
+    // 任务卡片：删除这次下载（连同文件），卡片收起
+    $('taskDeleteBtn').addEventListener('click', async () => {
+      if (!currentFile) return;
+      const index = await findHistoryIndexForFile(currentFile);
+      if (index >= 0) {
+        try {
+          await invoke('delete_history_item', { index, deleteFiles: true });
+        } catch (error) {
+          window.alert('删除失败：' + error);
+        }
+      }
+      currentFile = '';
+      taskFileList = [];
+      $('taskCard').style.display = 'none';
+      refreshHistory();
+    });
+
+    function showPreview(files, index) {
+      previewFiles = files;
+      previewIndex = index;
+      $('preview').style.display = 'flex';
+      renderPreview();
+    }
+
+    function closePreview() {
+      $('preview').style.display = 'none';
+      $('previewBody').innerHTML = '';   // 顺带把正在播放的视频/音频停掉
+      previewFiles = [];
+    }
+
+    function renderPreview() {
+      const path = previewFiles[previewIndex] || '';
+      const kind = mediaKind(path);
+      $('previewName').textContent = fileName(path);
+      $('previewSize').textContent = formatBytes(fileSizes.get(path) || 0);
+      const body = $('previewBody');
+      body.innerHTML = '';
+
+      if (kind === 'image') {
+        const image = document.createElement('img');
+        image.src = fileUrl(path);
+        image.addEventListener('click', () => {
+          image.style.transform = image.style.transform === 'scale(2)' ? 'scale(1)' : 'scale(2)';
+        });
+        body.appendChild(image);
+        const imageIndexes = previewFiles.map((file, index) => [file, index]).filter(([file]) => mediaKind(file) === 'image');
+        if (imageIndexes.length > 1) {
+          const position = imageIndexes.findIndex(([, index]) => index === previewIndex);
+          const prev = document.createElement('button');
+          prev.className = 'preview-nav prev';
+          prev.textContent = '‹';
+          prev.addEventListener('click', () => {
+            previewIndex = imageIndexes[(position - 1 + imageIndexes.length) % imageIndexes.length][1];
+            renderPreview();
+          });
+          const next = document.createElement('button');
+          next.className = 'preview-nav next';
+          next.textContent = '›';
+          next.addEventListener('click', () => {
+            previewIndex = imageIndexes[(position + 1) % imageIndexes.length][1];
+            renderPreview();
+          });
+          const counter = document.createElement('div');
+          counter.className = 'preview-counter';
+          counter.textContent = `${position + 1}/${imageIndexes.length}`;
+          body.appendChild(prev);
+          body.appendChild(next);
+          body.appendChild(counter);
+        }
+      } else if (kind === 'video') {
+        const video = document.createElement('video');
+        video.src = fileUrl(path);
+        video.controls = true;
+        video.autoplay = true;
+        body.appendChild(video);
+      } else if (kind === 'audio') {
+        const audio = document.createElement('audio');
+        audio.src = fileUrl(path);
+        audio.controls = true;
+        audio.autoplay = true;
+        body.appendChild(audio);
+      } else if (kind === 'pdf') {
+        const frame = document.createElement('iframe');
+        frame.src = fileUrl(path);
+        body.appendChild(frame);
+      } else {
+        const hint = document.createElement('div');
+        hint.style.color = '#fff';
+        hint.textContent = '这类文件没有内置预览，点右上角「打开」用系统应用查看';
+        body.appendChild(hint);
+      }
+    }
+
+    // 绑定预览按钮（元素在 <script> 之前已就绪；加 null 判断避免以后调整结构又踩空）
+    if ($('previewClose')) {
+      $('previewClose').addEventListener('click', closePreview);
+      $('previewOpen').addEventListener('click', () => {
+        const path = previewFiles[previewIndex];
+        if (path) invoke('open_path', { path }).catch((error) => window.alert('打开失败：' + error));
+      });
+      $('previewReveal').addEventListener('click', () => {
+        const path = previewFiles[previewIndex];
+        if (path) invoke('reveal_file', { path }).catch((error) => window.alert('打开失败：' + error));
+      });
+    }
+
+    function platformLabel(key) {
+      return {
+        douyin: '抖音', kuaishou: '快手', xiaohongshu: '小红书',
+        wechat_channels: '微信视频号', bilibili: 'B 站', weibo: '微博',
+        tiktok: 'TikTok', instagram: 'Instagram',
+        x: 'X', youtube: 'YouTube', generic: '通用解析', web: '网页资源'
+      }[key] || '文件';
+    }
+
+
+
+    // ---------------------------------------------------------------- 账号（云端 Cookie 同步）
+
+    let accountLoggedIn = false;
+    let syncPlatforms = {};
+
+    function renderAccount(status) {
+      if (status) accountLoggedIn = Boolean(status.loggedIn);
+      $('accountLoggedOut').style.display = accountLoggedIn ? 'none' : 'block';
+      $('accountLoggedIn').style.display = accountLoggedIn ? 'block' : 'none';
+      if (accountLoggedIn) {
+        const phone = (status && status.phone) || $('accountPhone').value.trim();
+        const nickname = (status && status.nickname) || '';
+        $('accountInfo').textContent = `${phone}${nickname ? ' · ' + nickname : ''}（本机类型：电脑端）`;
+      }
+    }
+
+    /** 云端两端都可能有：取"更新得更新鲜"的那一端（时间相同/缺失时优先手机端） */
+    function pickNewestDevice(slots) {
+      const mobile = (slots && slots.mobile) || {};
+      const pc = (slots && slots.pc) || {};
+      if (mobile.exists && pc.exists) {
+        return String(pc.updatedAt || '') > String(mobile.updatedAt || '') ? 'pc' : 'mobile';
+      }
+      if (mobile.exists) return 'mobile';
+      if (pc.exists) return 'pc';
+      return '';
+    }
+
+    // 云端状态更新后重画登录态列表（本机与云端在同一行展示，与 Mac / 安卓一致）
+    function renderSyncList(platforms) {
+      if (platforms) syncPlatforms = platforms;
+      renderCookies();
+    }
+
+    let smsCountdown = 0;
+
+    function startSmsCountdown(seconds = 60) {
+      smsCountdown = seconds;
+      $('sendCodeBtn').disabled = true;
+      const tick = () => {
+        $('sendCodeBtn').textContent = `${smsCountdown} 秒后可重发`;
+        smsCountdown -= 1;
+        if (smsCountdown < 0) {
+          clearInterval(timer);
+          $('sendCodeBtn').disabled = false;
+          $('sendCodeBtn').textContent = '获取验证码';
+          return;
+        }
+      };
+      const timer = setInterval(tick, 1000);
+      tick();
+    }
+
+    $('sendCodeBtn').addEventListener('click', async () => {
+      const phone = $('accountPhone').value.trim();
+      if (phone.length < 11) { $('accountHint').textContent = '请先填 11 位手机号'; return; }
+      $('accountHint').textContent = '正在发送验证码…';
+      await invoke('engine_send', { payload: { id: 'sms-code', cmd: 'account_sms_code', phone } });
+      startSmsCountdown(60);
+    });
+
+    $('accountLoginBtn').addEventListener('click', async () => {
+      const phone = $('accountPhone').value.trim();
+      const code = $('accountCode').value.trim();
+      if (!phone || !code) { $('accountHint').textContent = '请填手机号和验证码'; return; }
+      $('accountHint').textContent = '正在登录…';
+      await invoke('engine_send', { payload: { id: 'account-login', cmd: 'account_login', phone, code } });
+    });
+
+    $('accountLogoutBtn').addEventListener('click', async () => {
+      await invoke('engine_send', { payload: { id: 'account-logout', cmd: 'account_logout' } });
+      $('accountHint').textContent = '已退出账号';
+      renderSyncList({});
+    });
+
+    $('uploadAllBtn').addEventListener('click', async () => {
+      const keys = Object.keys(cookieState).filter((key) => cookieState[key] && cookieState[key].has_cookie);
+      if (!keys.length) { $('accountHint').textContent = '本机还没有可同步的 Cookie'; return; }
+      $('accountHint').textContent = `正在同步 ${keys.length} 个平台…`;
+      for (const key of keys) {
+        await invoke('engine_send', { payload: { id: `sync-${key}`, cmd: 'cookie_sync_upload', platform: key } });
+      }
+      $('accountHint').textContent = `已同步 ${keys.length} 个平台 ✓`;
+      setTimeout(() => { $('accountHint').textContent = ''; }, 3000);
+    });
+
+    $('clearCloudBtn').addEventListener('click', async () => {
+      if (!window.confirm('确定清空云端保存的所有 Cookie 吗？清空后其它设备就不能再同步了。')) return;
+      await invoke('engine_send', { payload: { id: 'clear-cloud', cmd: 'cookie_sync_clear' } });
+      renderSyncList({});
+      $('accountHint').textContent = '云端 Cookie 已清空';
+    });
+
+    // 拉取全部云端登录态到本地：每个平台取"最新的一份"（登录后的自动回填失败时手动补一次）
+    $('pullAllBtn').addEventListener('click', async () => {
+      const platforms = Object.keys(syncPlatforms).filter((key) => pickNewestDevice(syncPlatforms[key]));
+      if (!platforms.length) {
+        $('accountHint').textContent = '云端还没有可拉取的登录态';
+        return;
+      }
+      $('accountHint').textContent = `正在拉取 ${platforms.length} 个平台的云端登录态…`;
+      for (const platform of platforms) {
+        const device = pickNewestDevice(syncPlatforms[platform] || {});
+        await invoke('engine_send', { payload: {
+          id: `pull-all-${platform}`,
+          cmd: 'cookie_sync_pull',
+          platform,
+          deviceType: device,
+        } });
+        await new Promise((resolve) => setTimeout(resolve, 300));
+      }
+      $('accountHint').textContent = `已拉取 ${platforms.length} 个平台的云端登录态到本地`;
+      invoke('engine_send', { payload: { id: 'cookie-status', cmd: 'cookie_status' } }).catch(() => {});
+    });
+
+    // ---------------------------------------------------------------- 提建议
+
+    $('feedbackBtn').addEventListener('click', async () => {
+      const content = $('feedbackText').value.trim();
+      if (!content) { $('feedbackHint').textContent = '请先填写建议内容'; return; }
+      $('feedbackHint').textContent = '正在提交…';
+      await invoke('engine_send', { payload: {
+        id: 'feedback',
+        cmd: 'cloud_feedback',
+        type: 'SUGGESTION',
+        content,
+        contact: $('feedbackContact').value.trim(),
+        with_logs: false,
+      } });
+    });
+
+    // 选择下载目录（Rust 侧调用系统目录选择框）
+    $('pickFolderBtn').addEventListener('click', async () => {
+      try {
+        const picked = await invoke('pick_folder');
+        if (picked) $('setOutDir').value = picked;
+      } catch (error) {
+        $('settingsHint').textContent = '无法打开目录选择框，请手动填写路径';
+      }
+    });
+
+    // ---------------------------------------------------------------- 主题（与安卓端一致）
+    const THEMES = {
+      green: { primary: '#4caf7d', soft: '#d9f2e3', top: '#e9f7ef', bottom: '#f7fbf8', a: '#7cd8a6', b: '#3fa46d', chip: '#12432b' },
+      orange: { primary: '#ff8a3d', soft: '#ffe7d6', top: '#ffede0', bottom: '#fff9f5', a: '#ffa96b', b: '#f97316', chip: '#a4551b' },
+    };
+
+    function applyTheme(key) {
+      const theme = THEMES[key] ? key : 'green';
+      const t = THEMES[theme];
+      const root = document.documentElement.style;
+      root.setProperty('--primary', t.primary);
+      root.setProperty('--primary-soft', t.soft);
+      root.setProperty('--bg-top', t.top);
+      root.setProperty('--bg-bottom', t.bottom);
+      root.setProperty('--gradient-a', t.a);
+      root.setProperty('--gradient-b', t.b);
+      root.setProperty('--chip-text', t.chip);
+      localStorage.setItem('theme', theme);
+      $('themeBtn').textContent = theme === 'green' ? '换橙色' : '换绿色';
+    }
+
+    // ---------------------------------------------------------------- 设置
+
+    function fillSettings(settings) {
+      if (!settings) return;
+      if (settings.out_dir !== undefined) $('setOutDir').value = settings.out_dir || '';
+      if (settings.name_template !== undefined) $('setNameTemplate').value = settings.name_template || '';
+      if (settings.max_height !== undefined) $('setMaxHeight').value = String(settings.max_height || 0);
+      if (settings.proxy !== undefined) $('setProxy').value = settings.proxy || '';
+    }
+
+    async function saveSettings() {
+      const payload = {
+        cmd: 'set_settings',
+        settings: {
+          out_dir: $('setOutDir').value.trim(),
+          name_template: $('setNameTemplate').value.trim() || '{author}-{title}',
+          max_height: Number($('setMaxHeight').value || 0),
+          proxy: $('setProxy').value.trim(),
+        },
+      };
+      await invoke('engine_send', { payload: { id: 'set-settings', ...payload } });
+      $('settingsHint').textContent = '已保存 ✓';
+      setTimeout(() => { $('settingsHint').textContent = ''; }, 2000);
+    }
+
+    // ---------------------------------------------------------------- Cookie 管理
+
+    const PLATFORM_LABELS = {
+      douyin: '抖音', kuaishou: '快手', xiaohongshu: '小红书', wechat_channels: '微信视频号',
+      bilibili: 'B 站', weibo: '微博', tiktok: 'TikTok', instagram: 'Instagram',
+      x: 'X', youtube: 'YouTube', ixigua: '西瓜视频', reddit: 'Reddit',
+      vimeo: 'Vimeo', twitch: 'Twitch', weishi: '微视', haokan: '好看视频',
+      netease: '网易云音乐', qqmusic: 'QQ 音乐',
+    };
+    let cookieState = {};
+
+    function renderCookies(cookies) {
+      if (cookies) cookieState = cookies;
+      const keys = Object.keys(PLATFORM_LABELS).filter((key) => cookieState[key]);
+      if (!keys.length) {
+        $('cookieList').textContent = '还没读到 Cookie 状态（引擎可能还在启动）';
+        return;
+      }
+      $('cookieList').className = '';
+      $('cookieList').innerHTML = keys.map((key) => {
+        const info = cookieState[key] || {};
+        const invalid = Boolean(info.invalid);
+        const has = Boolean(info.has_cookie);
+        const stateText = invalid ? '已失效' : (has ? `已登录 · ${info.updated_at || ''}` : '未登录');
+        const color = invalid ? 'var(--warn)' : (has ? 'var(--ok)' : 'var(--muted)');
+        const source = info.source || '';
+        // 云端那一组：账号登录后才出现（与 Mac / 安卓的合并卡片一致）
+        let cloudPart = '';
+        if (accountLoggedIn) {
+          const slots = syncPlatforms[key] || {};
+          const mobile = slots.mobile || {};
+          const pc = slots.pc || {};
+          const mobileActive = source === '云端·手机端';
+          const pcActive = source === '云端·电脑端';
+          const newest = pickNewestDevice(slots);
+          cloudPart = `
+            <span class="cloud-group">
+              <button data-sync-pull="${key}" data-device="mobile" class="${mobileActive ? 'sync-active' : ''}" ${mobile.exists ? '' : 'disabled'}>${mobileActive ? '✓ ' : ''}使用手机登录态</button>
+              <button data-sync-pull="${key}" data-device="pc" class="${pcActive ? 'sync-active' : ''}" ${pc.exists ? '' : 'disabled'}>${pcActive ? '✓ ' : ''}使用电脑端登录态</button>
+              <button data-sync-pull-newest="${key}" ${newest ? '' : 'disabled'}>拉取云端登录态</button>
+              <button data-sync-upload="${key}" ${has ? '' : 'disabled'}>同步本机登录态</button>
+              ${(mobile.exists || pc.exists) ? `<button data-sync-delete="${key}">删除云端</button>` : ''}
+              <span class="cloud-state">云端：手机端${mobile.exists ? ' ✓' : ' —'} / 电脑端${pc.exists ? ' ✓' : ' —'}</span>
+            </span>`;
+        }
+        return `<div class="cookie-row">
+          <div class="name">${PLATFORM_LABELS[key]}<span class="state" style="color:${color}">${stateText}</span>${source ? `<span class="state">来源：${source}</span>` : ''}</div>
+          <button data-cookie-login="${key}">${has ? '重新登录' : '登录'}</button>
+          <button data-cookie-paste="${key}">手动粘贴</button>
+          <button data-cookie-test="${key}">测试登录态</button>
+          ${has ? `<button data-cookie-clear="${key}">清除</button>` : ''}
+          ${cloudPart}
+        </div>`;
+      }).join('');
+    }
+
+    let loginTaskId = null;
+    let loginPlatform = '';
+
+    function showCookieHint(text) {
+      $('cookieHintText').textContent = text;
+      $('cookieHint').style.display = 'block';
+    }
+
+    function hideCookieHint() {
+      $('cookieHint').style.display = 'none';
+      loginTaskId = null;
+      loginPlatform = '';
+    }
+
+    $('cookieList').addEventListener('click', async (event) => {
+      const target = event.target.closest('button');
+      if (!target) return;
+      if (target.dataset.cookieLogin) {
+        const platform = target.dataset.cookieLogin;
+        loginPlatform = platform;
+        loginTaskId = `login-${platform}-${Date.now()}`;
+        await invoke('engine_send', { payload: { id: loginTaskId, cmd: 'cookie_login', platform } });
+        showCookieHint(`已打开 ${PLATFORM_LABELS[platform]} 登录窗口：在里面登录后点「完成」（换账号可先退出登录）`);
+      } else if (target.dataset.cookiePaste) {
+        const platform = target.dataset.cookiePaste;
+        const value = window.prompt(`把 ${PLATFORM_LABELS[platform]} 的 Cookie 粘贴到这里（形如 name=value; name2=value2）`, '');
+        if (value) {
+          await invoke('engine_send', { payload: { id: `paste-${platform}`, cmd: 'cookie_set', platform, cookie: value } });
+        }
+      } else if (target.dataset.cookieTest) {
+        const platform = target.dataset.cookieTest;
+        showCookieHint(`正在测试 ${PLATFORM_LABELS[platform]} 的 Cookie…`);
+        await invoke('engine_send', { payload: { id: `test-${platform}`, cmd: 'cookie_test', platform } });
+      } else if (target.dataset.cookieClear) {
+        const platform = target.dataset.cookieClear;
+        await invoke('engine_send', { payload: { id: `clear-${platform}`, cmd: 'cookie_clear', platform } });
+      } else if (target.dataset.syncPull) {
+        // 拉取云端指定端的登录态（与 Mac / 安卓的「使用手机/电脑端登录态」一致）
+        await invoke('engine_send', { payload: {
+          id: `pull-${target.dataset.syncPull}`,
+          cmd: 'cookie_sync_pull',
+          platform: target.dataset.syncPull,
+          deviceType: target.dataset.device,
+        } });
+      } else if (target.dataset.syncPullNewest) {
+        // 不选端：直接取云端最新的那一份
+        const platform = target.dataset.syncPullNewest;
+        const device = pickNewestDevice(syncPlatforms[platform] || {});
+        if (!device) return;
+        await invoke('engine_send', { payload: {
+          id: `pull-new-${platform}`,
+          cmd: 'cookie_sync_pull',
+          platform,
+          deviceType: device,
+        } });
+      } else if (target.dataset.syncUpload) {
+        await invoke('engine_send', { payload: {
+          id: `upload-${target.dataset.syncUpload}`,
+          cmd: 'cookie_sync_upload',
+          platform: target.dataset.syncUpload,
+        } });
+      } else if (target.dataset.syncDelete) {
+        const platform = target.dataset.syncDelete;
+        if (!window.confirm(`确定删除云端保存的「${PLATFORM_LABELS[platform] || platform}」登录态吗？`)) return;
+        await invoke('engine_send', { payload: { id: `del-${platform}`, cmd: 'cookie_sync_clear', platform } });
+      }
+    });
+
+    $('cookieLoginSave').addEventListener('click', () => {
+      if (!loginTaskId) return;
+      invoke('engine_send', { payload: { id: 'login-save', cmd: 'cookie_login_save', task_id: loginTaskId } });
+      showCookieHint('正在保存 Cookie…');
+    });
+
+    $('cookieLoginCancel').addEventListener('click', () => {
+      if (!loginTaskId) { hideCookieHint(); return; }
+      invoke('engine_send', { payload: { id: 'login-cancel', cmd: 'cookie_login_cancel', task_id: loginTaskId } });
+      hideCookieHint();
+    });
+
+    // 首页 / 设置 两个视图（与 Mac 版一致：首页只管解析下载，设置独立成页）
+    function showView(name) {
+      const isSettings = name === 'settings';
+      $('homeView').style.display = isSettings ? 'none' : 'block';
+      $('settingsView').style.display = isSettings ? 'block' : 'none';
+      $('viewToggleBtn').textContent = isSettings ? '返回' : '设置';
+      window.scrollTo({ top: 0 });
+    }
+
+    $('viewToggleBtn').addEventListener('click', () => {
+      const toSettings = $('settingsView').style.display === 'none';
+      showView(toSettings ? 'settings' : 'home');
+    });
+
+    $('themeBtn').addEventListener('click', () => {
+      applyTheme(localStorage.getItem('theme') === 'green' ? 'orange' : 'green');
+    });
+
+    $('settingsToggle').addEventListener('click', () => {
+      const body = $('settingsBody');
+      const hidden = body.style.display === 'none';
+      body.style.display = hidden ? 'block' : 'none';
+      $('settingsToggle').textContent = hidden ? '收起' : '展开';
+    });
+
+    $('saveSettingsBtn').addEventListener('click', saveSettings);
+
+    // ---------------------------------------------------------------- 版本更新
+
+    let updateInfo = null;
+    let appVersion = '';
+
+    function showUpdate(info) {
+      updateInfo = info;
+      $('updateVersion').textContent = info.versionName || '';
+      $('updateCurrent').textContent = appVersion ? `v${appVersion}` : '当前安装版本';
+      $('updateLatest').textContent = `${info.versionName || ''}（${info.versionCode || 0}）`;
+      const size = Number(info.fileSize || 0);
+      $('updateSize').textContent = size > 0 ? ` · ${(size / 1024 / 1024).toFixed(0)}MB` : '';
+      const lines = String(info.changelog || '有新版本可用，建议更新。')
+        .split('\n').map((line) => line.trim()).filter(Boolean);
+      $('updateChangelog').innerHTML = (lines.length ? lines : ['有新版本可用，建议更新。'])
+        .map((line) => `<li>${escapeHtml(line)}</li>`).join('');
+      $('updateCard').style.display = 'block';
+    }
+
+    function checkUpdate() {
+      invoke('engine_send', {
+        payload: { id: 'update-check', cmd: 'cloud_check_update', platform: 'windows' }
+      }).catch(() => {});
+    }
+
+    $('updateLater').addEventListener('click', () => {
+      $('updateCard').style.display = 'none';
+    });
+    $('updateDownload').addEventListener('click', async () => {
+      const url = updateInfo && updateInfo.downloadUrl;
+      if (!url) return;
+      try {
+        await invoke('open_url', { url });
+      } catch (error) {
+        $('updateDownload').textContent = '打开失败，请手动访问';
+      }
+    });
+
+    function escapeJs(text) {
+      return String(text).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    }
+
+    async function openPath(path) {
+      await invoke('open_path', { path });
+    }
+
+    function escapeHtml(text) {
+      return String(text).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+    }
+
+    function showTask(stage, title, percent, detail) {
+      $('taskCard').style.display = 'block';
+      $('taskStage').textContent = stage || '';
+      if (title) $('taskTitle').textContent = title;
+      $('taskBar').style.width = (percent || 0) + '%';
+      $('taskDetail').textContent = detail || '';
+    }
+
+    // listen() 是异步的：必须等它注册完成再发第一波请求，否则引擎的 engine_status /
+    // cookie_status 会「发得太早」，设置回填和 Cookie 列表就一直是空的（Windows 上实测踩到）
+    const bridgeReady = listen('bridge-event', (event) => {
+      const payload0 = event.payload || {};
+      const payload = event.payload || {};
+      const id = payload.id;
+      if (payload.event === 'engine_status') {
+        const engines = payload.engines || {};
+        const ready = Object.values(engines).every((item) => item.ready);
+        setBadge(ready ? '引擎就绪' : '引擎不完整', ready ? '#d9f2e3' : '#ffe0cc');
+        fillSettings(payload.settings);
+        if (payload.cookies) renderCookies(payload.cookies);
+        invoke('engine_send', { payload: { id: 'cookie-status', cmd: 'cookie_status' } }).catch(() => {});
+        invoke('engine_send', { payload: { id: 'account-status', cmd: 'account_status' } }).catch(() => {});
+        invoke('engine_send', { payload: { id: 'sync-status', cmd: 'cookie_sync_status' } }).catch(() => {});
+        return;
+      }
+      if (payload.event === 'cookie_status') {
+        renderCookies(payload.cookies);
+        renderSyncList(); // 本机来源变化后，同步刷新「使用手机/电脑端登录态」的高亮
+        return;
+      }
+      if (payload.event === 'cookie_login_ready') {
+        showCookieHint(`已打开登录窗口：登录完成后点「完成」`);
+        return;
+      }
+      if (payload.kind === 'cookie_test') {
+        showCookieHint(payload.ok ? `✓ ${payload.message || 'Cookie 有效'}` : `✗ ${payload.message || '检测未通过'}`);
+        setTimeout(() => { $('cookieHint').style.display = 'none'; }, 6000);
+        return;
+      }
+      if (payload.kind === 'cookie_set' || payload.kind === 'cookie_clear' || payload.kind === 'cookie_sync_upload' || payload.kind === 'cookie_sync_pull') {
+        renderCookies(payload.cookies || payload.cookie_status);
+        return;
+      }
+      if (payload.kind === 'cookie_login') {
+        hideCookieHint();
+        $('settingsHint').textContent = `${PLATFORM_LABELS[loginPlatform] || ''} 已保存 ${payload.count || 0} 条 Cookie ✓`;
+        setTimeout(() => { $('settingsHint').textContent = ''; }, 3000);
+        invoke('engine_send', { payload: { id: 'cookie-status', cmd: 'cookie_status' } }).catch(() => {});
+        return;
+      }
+      if (payload.kind === 'cookie_login_cancelled') {
+        hideCookieHint();
+        return;
+      }
+      // 云控：版本更新结果（与下载任务无关，单独处理）
+      if (payload.kind === 'account_status') {
+        renderAccount(payload);
+        return;
+      }
+      if (payload.kind === 'account_sms_code') {
+        $('accountHint').textContent = '验证码已发送，请查看短信（签名报备期间可能走测试通道）';
+        return;
+      }
+      if (payload.kind === 'account_login') {
+        renderAccount({ loggedIn: true, phone: payload.phone, nickname: payload.nickname });
+        $('accountHint').textContent = '登录成功 ✓';
+        invoke('engine_send', { payload: { id: 'sync-status', cmd: 'cookie_sync_status' } }).catch(() => {});
+        // 登录即回填：本机没有的平台自动用云端登录态（电脑端优先，手机端兜底）
+        invoke('engine_send', { payload: { id: 'sync-autofill', cmd: 'cookie_sync_autofill' } }).catch(() => {});
+        return;
+      }
+      if (payload.kind === 'account_logout') {
+        renderAccount({ loggedIn: false });
+        return;
+      }
+      if (payload.kind === 'cookie_sync_status') {
+        renderAccount({ loggedIn: payload.loggedIn });
+        renderSyncList(payload.platforms || {});
+        return;
+      }
+      if (payload.kind === 'cookie_sync_upload' || payload.kind === 'cookie_sync_pull') {
+        // pull 的返回里没有 platforms：别用空对象覆盖已有云端状态（否则列表会瞬间变空）
+        if (payload.platforms) renderSyncList(payload.platforms);
+        if (payload.kind === 'cookie_sync_pull') {
+          $('accountHint').textContent = `已改用云端·${payload.deviceType === 'mobile' ? '手机端' : '电脑端'}的登录态`;
+          invoke('engine_send', { payload: { id: 'cookie-status', cmd: 'cookie_status' } }).catch(() => {});
+          // 拉取后重新取一次云端状态（列表按最新状态重画）
+          invoke('engine_send', { payload: { id: 'sync-status', cmd: 'cookie_sync_status' } }).catch(() => {});
+        }
+        return;
+      }
+      if (payload.kind === 'cookie_sync_autofill') {
+        if (payload.platforms) renderSyncList(payload.platforms);
+        const applied = payload.applied || [];
+        if (applied.length) {
+          $('accountHint').textContent = `已自动回填 ${applied.length} 个平台的登录态（来自云端）`;
+        }
+        invoke('engine_send', { payload: { id: 'cookie-status', cmd: 'cookie_status' } }).catch(() => {});
+        return;
+      }
+      if (payload.kind === 'cookie_sync_clear') {
+        renderSyncList(payload.platforms || {});
+        return;
+      }
+      if (payload.kind === 'cloud_feedback') {
+        $('feedbackHint').textContent = '已收到，感谢反馈 ✓';
+        $('feedbackText').value = '';
+        return;
+      }
+      if (payload.kind === 'cloud_check_update') {
+        if (payload.hasUpdate) showUpdate(payload);
+        return;
+      }
+      if (payload.kind === 'cloud_register') return;
+      if (id !== currentTaskId && payload.event !== 'done') return;
+      switch (payload.event) {
+        case 'meta':
+          showTask('解析中', payload.label, 0);
+          break;
+        case 'stage':
+          showTask(payload.stage || '处理中', null, null);
+          break;
+        case 'progress': {
+          const percent = payload.percent || 0;
+          const detail = payload.total
+            ? `${formatBytes(payload.downloaded)} / ${formatBytes(payload.total)}`
+            : '';
+          showTask('下载中', null, percent, detail);
+          break;
+        }
+        case 'done':
+          showTask('已完成', null, 100, payload.title || '');
+          currentFile = payload.file || (payload.files && payload.files[0]) || '';
+          $('taskActions').style.display = currentFile ? 'flex' : 'none';
+          renderTaskFiles(payload.files || []);
+          refreshHistory();
+          // 与安卓/Mac 一致：下载完成后清空输入框，方便直接粘贴下一条
+          if (id === currentTaskId) $('input').value = '';
+          break;
+        case 'error':
+          if (id === 'account-login' || id === 'sms-code') {
+            $('accountHint').textContent = payload.message || '操作失败';
+          } else if (id === 'feedback') {
+            $('feedbackHint').textContent = payload.message || '提交失败';
+          } else if (loginTaskId && id === loginTaskId) {
+            showCookieHint(`登录失败：${payload.message || ''}`);
+          } else {
+            showTask('失败', null, 0, payload.message || '下载失败');
+          }
+          break;
+      }
+    });
+
+    listen('bootstrap-log', (event) => {
+      $('log').textContent += event.payload + '\n';
+      $('log').scrollTop = $('log').scrollHeight;
+    });
+    listen('bootstrap-done', async (event) => {
+      $('log').textContent += event.payload === 'ok' ? '\n初始化完成 ✓\n' : '\n初始化失败，请检查日志\n';
+      await refreshEngine();
+    });
+
+    function formatBytes(value) {
+      if (!value) return '0 B';
+      const units = ['B', 'KB', 'MB', 'GB'];
+      let index = 0;
+      let size = value;
+      while (size >= 1024 && index < units.length - 1) { size /= 1024; index++; }
+      return `${size.toFixed(1)} ${units[index]}`;
+    }
+
+    $('downloadBtn').addEventListener('click', async () => {
+      const text = $('input').value.trim();
+      if (!text) return;
+      currentTaskId = `t${Date.now()}`;
+      showTask('解析中…', null, 0);
+      await invoke('engine_send', { payload: { id: currentTaskId, cmd: 'download', url: text } });
+    });
+
+    $('pasteBtn').addEventListener('click', async () => {
+      try {
+        const text = await navigator.clipboard.readText();
+        if (text) $('input').value = text;
+      } catch (error) {
+        $('input').placeholder = '（无法读取剪贴板，请手动粘贴）';
+      }
+    });
+
+    // 主页 / 收藏夹批量：引擎用页面自己发出的带签名请求翻页，抓完再逐条下载
+    $('batchBtn').addEventListener('click', async () => {
+      const text = $('input').value.trim();
+      if (!text) return;
+      currentTaskId = `b${Date.now()}`;
+      showTask('批量解析中…', null, 0);
+      await invoke('engine_send', { payload: { id: currentTaskId, cmd: 'batch', url: text, limit: 20 } });
+    });
+
+    $('taskOpenBtn').addEventListener('click', async () => {
+      if (!currentFile) return;
+      try { await invoke('open_path', { path: currentFile }); } catch (error) { window.alert('打开失败：' + error); }
+    });
+
+    // 任务卡片的图标（与下载记录一致）
+    $('taskOpenBtn').innerHTML = ICONS.open;
+    $('taskShareBtn').innerHTML = ICONS.share;
+    $('taskRevealBtn').innerHTML = ICONS.folder;
+    $('taskDeleteBtn').innerHTML = ICONS.trash;
+
+    $('taskShareBtn').addEventListener('click', async () => {
+      if (!currentFile) return;
+      try {
+        const message = await invoke('share_file', { path: currentFile });
+        showTask('已完成', null, 100, message);
+      } catch (error) {
+        window.alert('分享失败：' + error);
+      }
+    });
+
+    $('taskRevealBtn').addEventListener('click', async () => {
+      if (!currentFile) return;
+      try { await invoke('reveal_file', { path: currentFile }); } catch (error) { window.alert('打开失败：' + error); }
+    });
+
+    $('folderBtn').addEventListener('click', async () => {
+      try {
+        const opened = await invoke('open_download_dir');
+        $('folderBtn').textContent = '已打开';
+        setTimeout(() => { $('folderBtn').textContent = '打开下载目录'; }, 1500);
+      } catch (error) {
+        window.alert('打开失败：' + error);
+      }
+    });
+
+    $('clearHistoryBtn').addEventListener('click', () => {
+      $('clearHistoryModal').style.display = 'flex';
+    });
+    $('clearHistoryCancel').addEventListener('click', () => {
+      $('clearHistoryModal').style.display = 'none';
+    });
+    $('clearHistoryOnly').addEventListener('click', () => finishClearHistory(false));
+    $('clearHistoryWithFiles').addEventListener('click', () => finishClearHistory(true));
+
+    async function finishClearHistory(deleteFiles) {
+      $('clearHistoryModal').style.display = 'none';
+      try {
+        const result = await invoke('clear_history', { deleteFiles });
+        refreshHistory();
+        window.alert(deleteFiles
+          ? `已清空 ${result.records} 条记录，并删除 ${result.files} 个文件`
+          : `已清空 ${result.records} 条记录（文件保留）`);
+      } catch (error) {
+        window.alert('清空失败：' + error);
+      }
+    }
+
+    $('bootstrapBtn').addEventListener('click', async () => {
+      $('log').textContent = '开始初始化…\n';
+      await invoke('run_bootstrap');
+    });
+
+    $('checkUpdateBtn').addEventListener('click', () => {
+      $('checkUpdateBtn').textContent = '检查中…';
+      checkUpdate();
+      setTimeout(() => { $('checkUpdateBtn').textContent = '检查更新'; }, 1500);
+      setTimeout(() => {
+        // 没发现新版本时给个小提示，避免点了没反应
+        if (!$('updateCard').style.display || $('updateCard').style.display === 'none') {
+          $('checkUpdateBtn').textContent = '已是最新';
+          setTimeout(() => { $('checkUpdateBtn').textContent = '检查更新'; }, 2000);
+        }
+      }, 3000);
+    });
+
+    applyTheme(localStorage.getItem('theme') || 'green');
+    invoke('app_version').then((value) => { appVersion = value; }).catch(() => {});
+    bridgeReady.finally(() => {
+      refreshEngine();
+      refreshHistory();
+      // 再兜一次：冷启动时引擎还没起来的话，2 秒后重新问一遍状态
+      setTimeout(() => {
+        invoke('engine_send', { payload: { id: 'status-retry', cmd: 'engine_status' } }).catch(() => {});
+      }, 2500);
+    });
+  </script>
+
+</body>
+</html>

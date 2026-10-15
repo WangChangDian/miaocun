@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>秒存 · 粘贴链接，即刻下载</title>
+  <meta name="description" content="秒存：粘贴链接即可下载抖音 / 快手 / 小红书 / 视频号 / B 站 / 微博 / TikTok / Instagram / X / YouTube / 西瓜视频 / Reddit / Vimeo / Twitch / 网易云 / QQ 音乐，以及上千个常见站点。macOS / Windows / Android 三端可用。" />
+  <link rel="icon" href="assets/icon.png" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="bg-orbs" aria-hidden="true">
+    <span class="orb orb-a"></span>
+    <span class="orb orb-b"></span>
+    <span class="orb orb-c"></span>
+    <span class="grain"></span>
+  </div>
+
+  <header class="nav" id="nav">
+    <a class="brand" href="#top">
+      <img src="assets/icon.png" alt="秒存" />
+      <span>秒存</span>
+    </a>
+    <nav class="nav-links">
+      <a href="#features">能力</a>
+      <a href="#platforms">支持平台</a>
+      <a href="#download">下载</a>
+    </nav>
+    <a class="nav-cta" href="#download">下载</a>
+  </header>
+
+  <main id="top">
+    <!-- ============================ Hero ============================ -->
+    <section class="hero">
+      <div class="hero-copy reveal">
+        <span class="pill">
+          <i class="dot"></i> 三端可用 · v<span data-version>1.8.18</span>
+        </span>
+        <h1>
+          粘贴链接<br />
+          <span class="grad">下载到本地</span>
+        </h1>
+        <p class="lead">
+          抖音、快手、小红书、微信视频号、B 站、微博、TikTok、Instagram、X、YouTube 等
+          常用平台，以及上千个常见站点；视频、图文、音频和普通文件都能保存到本地。
+          <br />macOS / Windows / Android 三端功能一致，完全免费、无需注册。
+        </p>
+        <div class="hero-actions">
+          <a class="btn btn-primary" href="#download">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0-4.5-4.5M12 15l4.5-4.5M4.5 19.5h15"/></svg>
+            下载安装包
+          </a>
+          <a class="btn btn-ghost" href="#features">查看功能</a>
+        </div>
+        <ul class="hero-facts">
+          <li><b>26</b><span>常用平台适配</span></li>
+          <li><b>1000+</b><span>站点通用解析</span></li>
+          <li><b>8</b><span>线程分段加速</span></li>
+          <li><b>免费</b><span>三端可用 · 无需注册</span></li>
+        </ul>
+      </div>
+
+      <div class="hero-visual reveal">
+        <div class="phone">
+          <div class="phone-notch"></div>
+          <div class="phone-inner">
+            <img src="assets/android-home.png" alt="秒存安卓端界面：下载完成卡片与文件列表" />
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================ 支持平台（平台墙 + 两行交错走马灯） ============================ -->
+    <section class="section section-alt" id="platforms">
+      <header class="section-head reveal">
+        <span class="kicker">支持平台</span>
+        <h2>支持下载的平台</h2>
+        <p>下面这些平台做了针对性适配（无水印、原始画质、清晰度选择），其余站点走通用解析。</p>
+      </header>
+      <div class="marquee-two reveal" aria-label="支持的平台（滚动展示）">
+        <div class="marquee">
+          <div class="marquee-track">
+            <div class="marquee-group" data-marquee></div>
+            <div class="marquee-group" data-marquee></div>
+          </div>
+        </div>
+        <div class="marquee marquee-reverse">
+          <div class="marquee-track">
+            <div class="marquee-group" data-marquee></div>
+            <div class="marquee-group" data-marquee></div>
+          </div>
+        </div>
+      </div>
+      <p class="platform-note reveal">
+        其它平台：酷狗音乐、优酷、腾讯视频、爱奇艺、芒果 TV、SoundCloud……上万个常见站点都能试；
+        认不出来的网页，也会自动嗅探里面的图片和视频。
+      </p>
+    </section>
+
+    <!-- ============================ 能力 ============================ -->
+    <section class="section" id="features">
+      <header class="section-head reveal">
+        <span class="kicker">核心能力</span>
+        <h2>一个工具，三端通用</h2>
+        <p>macOS、Windows、Android 三个平台，界面和体验保持一致，换设备不用重新学。</p>
+      </header>
+
+      <div class="feature-grid">
+        <article class="feature reveal">
+          <div class="feature-icon">
+            <svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.07 0l2.83-2.83a5 5 0 0 0-7.07-7.07L11 4.93"/><path d="M14 11a5 5 0 0 0-7.07 0L4.1 13.83a5 5 0 0 0 7.07 7.07L13 19.07"/></svg>
+          </div>
+          <h3>粘贴链接就能下</h3>
+          <p>分享文本、口令、短链、普通直链都能自动识别。不支持的文件类型直接当普通文件下载。</p>
+        </article>
+
+        <article class="feature reveal">
+          <div class="feature-icon">
+            <svg viewBox="0 0 24 24"><path d="M12 3 4 7v6c0 4.4 3.4 7.4 8 8 4.6-.6 8-3.6 8-8V7l-8-4Z"/><path d="m9 12 2 2 4-4"/></svg>
+          </div>
+          <h3>无水印 · 原始画质</h3>
+          <p>抖音取最高码率、小红书取原始文件（1080×1920）、B 站登录后支持 4K/HDR、YouTube 自动合并音视频。</p>
+        </article>
+
+        <article class="feature reveal">
+          <div class="feature-icon">
+            <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/><circle cx="18" cy="18" r="3"/></svg>
+          </div>
+          <h3>主页 / 收藏夹批量下载</h3>
+          <p>粘贴主页或收藏页链接，自动抓取最近 20 条作品，勾选后逐条进下载队列。</p>
+        </article>
+
+        <article class="feature reveal">
+          <div class="feature-icon">
+            <svg viewBox="0 0 24 24"><path d="M13 2 4.5 13.5H11L10 22l8.5-11.5H12L13 2Z"/></svg>
+          </div>
+          <h3>多线程分段加速</h3>
+          <p>类 IDM 的 8 段并发下载 + 断点续传 + 多 CDN 重试，大文件、长视频都能跑满带宽。</p>
+        </article>
+
+        <article class="feature reveal">
+          <div class="feature-icon">
+            <svg viewBox="0 0 24 24"><path d="M4 5h16v14H4z"/><path d="m9 10 3 2-3 2"/><path d="M13 14h4"/></svg>
+          </div>
+          <h3>网页资源嗅探</h3>
+          <p>公众号文章里的视频、图集、贴纸页面……自动嗅探页面里的图片与视频，多文件可勾选批量分享。</p>
+        </article>
+
+        <article class="feature reveal">
+          <div class="feature-icon">
+            <svg viewBox="0 0 24 24"><path d="M9 18V6l10-2v12"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="16" r="2"/></svg>
+          </div>
+          <h3>音乐也能下</h3>
+          <p>网易云音乐、QQ 音乐整首下载（未登录时会提示只拿到试听片段），自动保存到系统「音乐」目录。</p>
+        </article>
+
+        <article class="feature reveal">
+          <div class="feature-icon">
+            <svg viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+          </div>
+          <h3>Cookie 自己管</h3>
+          <p>登录态默认只存本机；登录账号后可加密同步到你自己的云端，手机端 / 电脑端随时换用（B 站 4K 就靠它），可一键清空。</p>
+        </article>
+
+        <article class="feature reveal">
+          <div class="feature-icon">
+            <svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 9 9"/><path d="M21 3v6h-6"/><path d="m9 12 3 3 5-6"/></svg>
+          </div>
+          <h3>版本更新 · 反馈建议</h3>
+          <p>安卓端应用内下载安装（带进度与校验），电脑端一键跳转下载；App 内可直接提建议、联系官方。</p>
+        </article>
+      </div>
+    </section>
+
+    <!-- ============================ 三步使用 ============================ -->
+    <section class="section" id="how">
+      <header class="section-head reveal">
+        <span class="kicker">怎么用</span>
+        <h2>使用步骤</h2>
+      </header>
+      <ol class="steps">
+        <li class="reveal">
+          <span class="step-no">1</span>
+          <h3>复制链接</h3>
+          <p>在抖音 / 小红书等 App 里点「分享 → 复制链接」，或直接复制作品页地址、mp4 直链。</p>
+        </li>
+        <li class="reveal">
+          <span class="step-no">2</span>
+          <h3>粘进下载器</h3>
+          <p>点「粘贴 → 下载」，自动识别平台并解析；手机还能用「分享 → 秒存」直接唤起。</p>
+        </li>
+        <li class="reveal">
+          <span class="step-no">3</span>
+          <h3>拿文件</h3>
+          <p>视频进相册 / 下载目录，图片和音频分类保存；完成后可一键打开、逐个分享或批量分享。</p>
+        </li>
+      </ol>
+    </section>
+
+    <!-- ============================ 下载 ============================ -->
+    <section class="section section-alt" id="download">
+      <header class="section-head reveal">
+        <span class="kicker">下载</span>
+        <h2>选择你的设备</h2>
+        <p>当前版本 <b data-version>1.8.18</b> · 完全免费、无需注册。</p>
+      </header>
+
+      <div class="download-grid">
+        <article class="download-card reveal">
+          <div class="dc-head">
+            <span class="dc-icon android">
+              <svg viewBox="0 0 24 24"><path d="M6 9h12v8a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V9Z"/><path d="M9 9 7.5 5.5M15 9l1.5-3.5"/><circle cx="10" cy="13" r="1"/><circle cx="14" cy="13" r="1"/></svg>
+            </span>
+            <div>
+              <h3>Android</h3>
+              <p class="dc-sub">Android 8.0 及以上 · v<span data-version-platform="android">1.8.17</span> · <span data-size-platform="android">61.1 MB</span></p>
+            </div>
+          </div>
+          <ul>
+            <li>应用内登录、应用内更新（带进度与校验）</li>
+            <li>支持「分享 → 秒存」直接唤起</li>
+            <li>视频进相册、图片进 Pictures、音频进音乐目录</li>
+          </ul>
+          <a class="btn btn-primary btn-block" data-download="android" href="#">下载 APK</a>
+          <p class="dc-foot">首次打开需允许「安装未知来源应用」</p>
+        </article>
+
+        <article class="download-card reveal featured">
+          <span class="ribbon">推荐</span>
+          <div class="dc-head">
+            <span class="dc-icon mac">
+              <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg>
+            </span>
+            <div>
+              <h3>macOS</h3>
+              <p class="dc-sub">Apple Silicon（M 系列）· v<span data-version-platform="macos">1.8.18</span> · <span data-size-platform="macos">330.4 MB</span></p>
+            </div>
+          </div>
+          <ul>
+            <li>已内置完整运行环境，下载解压后直接打开就能用</li>
+            <li>可从系统浏览器一键导入 Cookie，B 站 4K 更省事</li>
+            <li>自定义保存目录、命名模板、代理设置</li>
+          </ul>
+          <a class="btn btn-primary btn-block" data-download="macos" href="#">下载 macOS 版</a>
+          <p class="dc-foot">未签名应用，首次打开请右键 →「打开」</p>
+        </article>
+
+        <article class="download-card reveal">
+          <div class="dc-head">
+            <span class="dc-icon win">
+              <svg viewBox="0 0 24 24"><path d="M4 5.5 11 4.5v7H4v-6ZM12.5 4.3 20.5 3v8.5h-8V4.3ZM4 12.5h7v7L4 18.5v-6ZM12.5 12.5h8V21l-8-1.2v-7.3Z"/></svg>
+            </span>
+            <div>
+              <h3>Windows</h3>
+              <p class="dc-sub">Windows 10 / 11 · 安装包 · v<span data-version-platform="windows">1.8.17</span> · <span data-size-platform="windows">330.2 MB</span></p>
+            </div>
+          </div>
+          <ul>
+            <li>一键安装，已内置完整运行环境，装完直接使用</li>
+            <li>能力与 macOS 版一致：批量下载、多线程加速、登录态同步</li>
+            <li>支持应用内检查更新，新版本提示下载安装</li>
+          </ul>
+          <a class="btn btn-primary btn-block" data-download="windows" href="#">下载 Windows 版</a>
+          <p class="dc-foot">双击安装包按提示完成安装即可；不需要预装 Python 等环境</p>
+        </article>
+      </div>
+    </section>
+
+    <!-- ============================ 底栏 ============================ -->
+    <footer class="footer">
+      <div class="footer-inner">
+        <div class="footer-brand">
+          <img src="assets/icon.png" alt="" />
+          <div>
+            <b>秒存</b>
+            <span>粘贴链接，即刻下载 · v<span data-version>1.8.18</span></span>
+          </div>
+        </div>
+        <div class="footer-links">
+          <a href="#features">核心能力</a>
+          <a href="#platforms">支持平台</a>
+          <a href="#download">下载</a>
+        </div>
+        <p class="footer-note">
+          仅供个人学习与备份使用，请遵守各平台服务条款；本工具不提供任何会员 / 付费内容的下载能力。
+        </p>
+        <p class="footer-legal">
+          <a href="privacy.html">隐私政策</a>
+          <span class="dot">·</span>
+          <a href="terms.html">用户协议</a>
+          <span class="dot">·</span>
+          <a href="opensource.html">开源声明</a>
+          <span class="icp" id="icp-number"><!-- 备案号填这里，例如：粤ICP备00000000号-1 --></span>
+        </p>
+      </div>
+    </footer>
+  </main>
+
+  <script>
+    // 官网和云控后台同域时不用管；部署到别的域名时打开下面这行（详见 app.js 顶部说明）
+    // window.DOWNLOADER_API_BASE = 'https://music.aiyun-jing.com:8443/downloader-api';
+  </script>
+  <script src="app.js"></script>
+</body>
+</html>

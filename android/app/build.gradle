@@ -1,0 +1,90 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+    id 'org.jetbrains.kotlin.plugin.compose'
+}
+
+// 版本号唯一来源：仓库根目录的 VERSION 文件（与 Mac / 引擎共用）
+// versionCode 默认由 versionName 推导：major*10000 + minor*100 + patch（1.5.0 -> 10500）；
+// VERSION 里显式写了 versionCode= 时以手写的为准。规则与 scripts/version.sh 一致。
+def versionProps = [:]
+file("../../VERSION").withReader("UTF-8") { reader ->
+    reader.eachLine { line ->
+        def trimmed = line.trim()
+        if (!trimmed || trimmed.startsWith("#") || !trimmed.contains("=")) return
+        def parts = trimmed.split("=", 2)
+        versionProps[parts[0].trim()] = parts[1].trim()
+    }
+}
+def appVersionName = versionProps["versionName"] ?: "0.0.0"
+def appVersionCode = versionProps["versionCode"]
+if (!appVersionCode) {
+    // 从 1.5.0 推导 10500（预发布后缀如 1.6.0-beta.1 只取前导数字部分）
+    // 注意：Groovy 里 Matcher.find() 返回 boolean，取匹配文本要用 [0]
+    def nums = (appVersionName.split("-")[0]).split("\\.").collect { (it =~ /\d+/)[0] ?: "0" }
+    appVersionCode = (nums[0].toInteger() * 10000) +
+                     ((nums.size() > 1 ? nums[1].toInteger() : 0) * 100) +
+                     (nums.size() > 2 ? nums[2].toInteger() : 0)
+}
+
+android {
+    namespace 'local.wangchangdian.videograbber'
+    compileSdk 36
+
+    defaultConfig {
+        applicationId "local.wangchangdian.videograbber"
+        minSdk 26
+        targetSdk 36
+        versionCode appVersionCode.toInteger()
+        versionName appVersionName
+        ndk {
+            // 只打包 arm64（本机自用，包体最小）；如需兼容其他设备可加 'armeabi-v7a'
+            abiFilters 'arm64-v8a'
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.debug
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+
+    buildFeatures {
+        compose true
+        buildConfig true
+    }
+
+    packaging {
+        resources {
+            excludes += '/META-INF/{AL2.0,LGPL2.1}'
+        }
+    }
+}
+
+dependencies {
+    implementation platform('androidx.compose:compose-bom:2026.04.01')
+    implementation 'androidx.compose.material3:material3'
+    // 官方开源图标集（打开 / 分享 / 删除等图标按钮用；体积很小）
+    implementation 'androidx.compose.material:material-icons-core:1.7.8'
+    implementation 'androidx.compose.ui:ui'
+    implementation 'androidx.compose.ui:ui-tooling-preview'
+    implementation 'androidx.activity:activity-compose:1.13.0'
+    implementation 'androidx.core:core-ktx:1.15.0'
+    implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.8.7'
+    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+    // 1.9.0+ 才有 WebViewCompat.addDocumentStartJavaScript（抖音登录检测要在文档加载前注入监听）
+    implementation 'androidx.webkit:webkit:1.12.0'
+    // 安卓版 yt-dlp（内置 Python 运行时），用于 X / YouTube 解析下载
+    implementation 'io.github.junkfood02.youtubedl-android:library:0.18.1'
+    implementation 'io.github.junkfood02.youtubedl-android:ffmpeg:0.18.1'
+}

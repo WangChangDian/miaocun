@@ -1,0 +1,112 @@
+/* 法律/声明类页面的统一样式（与官网浅绿主题一致） */
+
+:root {
+  --bg: #f4faf6;
+  --card: #ffffff;
+  --line: rgba(24, 72, 48, 0.10);
+  --text: #1c2b22;
+  --muted: #5d7266;
+  --brand: #3fa46d;
+  --brand-soft: rgba(63, 164, 109, 0.12);
+  --radius: 18px;
+  --font: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB",
+    "Microsoft YaHei", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 0 20px 64px;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  line-height: 1.85;
+  -webkit-font-smoothing: antialiased;
+}
+
+header {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 28px 0 8px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+header img { width: 36px; height: 36px; border-radius: 10px; }
+header b { font-size: 17px; }
+header a.back {
+  margin-left: auto;
+  font-size: 13.5px;
+  color: var(--brand);
+  text-decoration: none;
+  padding: 6px 14px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--card);
+}
+
+main {
+  max-width: 860px;
+  margin: 12px auto 0;
+  padding: 30px 32px 36px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 18px 44px rgba(28, 74, 49, 0.06);
+}
+
+h1 { margin: 0 0 6px; font-size: 26px; letter-spacing: -0.4px; }
+h2 { margin: 30px 0 8px; font-size: 17px; }
+h3 { margin: 20px 0 6px; font-size: 15px; }
+
+p, li { font-size: 14px; color: #2b3b31; }
+.muted, .meta { color: var(--muted); font-size: 13px; }
+.meta { margin: 0 0 18px; }
+
+ul, ol { padding-left: 22px; }
+li { margin: 4px 0; }
+
+.tag {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--brand-soft);
+  color: var(--brand);
+  font-size: 12px;
+  margin-right: 6px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 12px 0;
+  font-size: 13px;
+}
+
+th, td {
+  border: 1px solid var(--line);
+  padding: 8px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+
+th { background: var(--brand-soft); font-weight: 600; }
+
+code {
+  background: rgba(28, 74, 49, 0.06);
+  padding: 1px 6px;
+  border-radius: 6px;
+  font-size: 12.5px;
+}
+
+a { color: var(--brand); }
+
+footer.page-foot {
+  max-width: 860px;
+  margin: 20px auto 0;
+  color: var(--muted);
+  font-size: 12.5px;
+  text-align: center;
+}

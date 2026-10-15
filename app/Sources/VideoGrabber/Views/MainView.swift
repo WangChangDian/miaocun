@@ -1,0 +1,396 @@
+import SwiftUI
+
+struct MainView: View {
+    @EnvironmentObject private var state: AppState
+
+    @State private var showClearHistoryDialog = false
+    @State private var preview: PreviewRequest?
+
+    var body: some View {
+        ZStack {
+            // 与安卓端一致的浅色渐变背景
+            LinearGradient(colors: state.palette.background, startPoint: .top, endPoint: .bottom)
+                .ignoresSafeArea()
+            VStack(alignment: .leading, spacing: 16) {
+                header
+                if state.showingSettings {
+                    SettingsView()
+                        .transition(.opacity.combined(with: .move(edge: .trailing)))
+                } else if !state.environmentInstalled {
+                    SetupView()
+                        .transition(.opacity)
+                } else {
+                    inputSection
+                    if let task = state.currentTask {
+                        TaskCard(task: task)
+                    }
+                    historySection
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(20)
+            .animation(.easeInOut(duration: 0.22), value: state.showingSettings)
+        }
+        .confirmationDialog("清空下载记录", isPresented: $showClearHistoryDialog, titleVisibility: .visible) {
+            Button("仅清空记录", role: nil) { state.clearHistory(deleteFiles: false) }
+            Button("清空并删除文件", role: .destructive) { state.clearHistory(deleteFiles: true) }
+            Button("取消", role: .cancel) { }
+        } message: {
+            Text("只清空列表，还是连下载好的文件一起删除？删除后无法恢复。")
+        }
+        .alert("提示", isPresented: Binding(
+            get: { state.errorMessage != nil },
+            set: { if !$0 { state.errorMessage = nil } }
+        )) {
+            Button("知道了", role: .cancel) { state.errorMessage = nil }
+        } message: {
+            Text(state.errorMessage ?? "")
+        }
+        .sheet(item: $preview) { request in
+            MediaPreviewSheet(files: request.files, index: request.index)
+        }
+    }
+
+    private var header: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "arrow.down.circle.fill")
+                .font(.system(size: 26))
+                .foregroundStyle(state.palette.primary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("秒存")
+                    .font(.title2.bold())
+                Text("抖音 / 快手 / 小红书 / 视频号 / B 站 / 微博 / TikTok / X / YouTube · 粘贴即可下载")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            // 与 Windows 版对齐：设置 / 换色 / 检查更新 三个按钮；设置页在主窗口内切换
+            Button(state.showingSettings ? "返回" : "设置") {
+                withAnimation(.easeInOut(duration: 0.22)) {
+                    state.showingSettings.toggle()
+                }
+            }
+                .font(.caption)
+                .help(state.showingSettings ? "回到首页" : "打开设置（⌘,）")
+            Button {
+                state.toggleTheme()
+            } label: {
+                Text(state.theme == "green" ? "换橙色" : "换绿色")
+                    .font(.caption)
+            }
+            .help("切换主题配色（浅橙 / 浅绿）")
+            Button("检查更新") { state.checkForUpdate() }
+                .font(.caption)
+                .help("检查是否有新版本")
+            engineBadge
+        }
+    }
+
+    private var engineBadge: some View {
+        let ready = state.enginesReady
+        return Label(
+            ready ? "引擎就绪" : (state.bridgeRunning ? "引擎检查中" : "引擎未启动"),
+            systemImage: ready ? "checkmark.seal.fill" : "exclamationmark.triangle"
+        )
+        .font(.caption)
+        .foregroundStyle(ready ? .green : .orange)
+        .help(state.engines.map { "\($0.label) \($0.version)" }.joined(separator: "\n"))
+    }
+
+    private var inputSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("作品链接或分享文本")
+                .font(.subheadline.weight(.medium))
+            TextEditor(text: $state.urlText)
+                .font(.body)
+                .frame(height: 84)
+                .padding(6)
+                .background(Color(nsColor: .textBackgroundColor))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(Color.secondary.opacity(0.25))
+                )
+            HStack {
+                Button {
+                    state.pasteFromClipboard()
+                } label: {
+                    Label("粘贴", systemImage: "doc.on.clipboard")
+                }
+                Button {
+                    state.download()
+                } label: {
+                    Label("下载", systemImage: "arrow.down.to.line")
+                }
+                .keyboardShortcut(.return, modifiers: [.command])
+                .buttonStyle(ThemeGradientButtonStyle(
+                    gradient: state.palette.gradient,
+                    enabled: !state.urlText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                ))
+                .disabled(state.urlText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+                // 批量下载（主页 / 收藏夹）：引擎用「页面内 fetch 重放」抓列表
+                // （页面自己的请求带平台签名，天然合法），需要先在 Cookie 管理里登录对应平台
+                Button {
+                    state.downloadBatch(limit: 20)
+                } label: {
+                    Label("批量下载", systemImage: "square.stack.3d.down.right")
+                }
+                .help("主页 / 收藏夹链接：抓取该主页最近的 20 条作品并逐条下载（需先在「设置 → Cookie 管理」登录对应平台）")
+                .disabled(state.urlText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+                if state.currentTask?.isRunning == true {
+                    Button(role: .destructive) {
+                        state.cancelCurrentTask()
+                    } label: {
+                        Label("取消", systemImage: "xmark.circle")
+                    }
+                }
+                Spacer()
+                Button {
+                    state.openDownloadFolder()
+                } label: {
+                    Label("打开下载目录", systemImage: "folder")
+                }
+            }
+        }
+    }
+
+    private var historySection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("下载记录")
+                    .font(.subheadline.weight(.medium))
+                Spacer()
+                Button("清空") { showClearHistoryDialog = true }
+                    .font(.caption)
+                    .disabled(state.history.isEmpty)
+                    .help("清空下载记录（可选择是否删除文件）")
+                Button {
+                    state.loadHistory()
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .buttonStyle(.borderless)
+                .help("刷新历史记录")
+            }
+            if state.history.isEmpty {
+                Text("还没有下载记录")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 12)
+            } else {
+                ScrollView {
+                    // 卡片之间不再画分隔线（与安卓端一致，靠卡片本身的间距区分）
+                    LazyVStack(alignment: .leading, spacing: 6) {
+                        ForEach(Array(state.history.enumerated()), id: \.element.id) { index, item in
+                            historyRow(item, index: index)
+                        }
+                    }
+                }
+                .frame(minHeight: 140, maxHeight: .infinity)
+            }
+        }
+    }
+
+    private func historyRow(_ item: HistoryItem, index: Int) -> some View {
+        let files = item.files.isEmpty && !item.file.isEmpty ? [item.file] : item.files
+        let primary = item.file.isEmpty ? (files.first ?? "") : item.file
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Text(item.platformName)
+                    .font(.caption2.weight(.semibold))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.accentColor.opacity(0.15))
+                    .clipShape(Capsule())
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(item.displayName)
+                        .font(.callout)
+                        .lineLimit(1)
+                    Text(item.mediaInfo.isEmpty ? item.finishedAt : "\(item.finishedAt) · \(item.mediaInfo)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                // 打开 / 显示 / 分享 / 删除（图标按钮；删除在最后，无确认，连同源文件一起删）
+                if !primary.isEmpty {
+                    cardIconButton("arrow.up.forward.square", help: "打开") {
+                        NSWorkspace.shared.open(URL(fileURLWithPath: primary))
+                    }
+                    cardIconButton("folder", help: "在访达中显示") { state.reveal(file: primary) }
+                    cardIconButton("square.and.arrow.up", help: "分享") {
+                        state.share(files: files.isEmpty ? [primary] : files)
+                    }
+                }
+                cardIconButton("trash", help: "删除这条记录及其文件", tint: .red) {
+                    state.deleteHistoryItem(at: index)
+                }
+            }
+            // 缩略图：图片点开可放大、视频/音频点开即播放（与安卓端一致）
+            if !files.isEmpty {
+                FileThumbStrip(
+                    files: files,
+                    onPreview: { fileIndex in
+                        preview = PreviewRequest(files: files, index: fileIndex)
+                    },
+                    onShare: { file in
+                        state.share(files: [file])
+                    },
+                    onDelete: { file in
+                        state.deleteHistoryFile(at: index, file: file)
+                    }
+                )
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+}
+
+/// 卡片里的图标操作按钮（打开 / 在访达中显示 / 分享 / 删除），主界面与任务卡片共用
+private func cardIconButton(
+    _ systemName: String,
+    help: String,
+    tint: Color = .secondary,
+    action: @escaping () -> Void
+) -> some View {
+    Button(action: action) {
+        Image(systemName: systemName)
+            .font(.system(size: 13))
+            .foregroundStyle(tint)
+            .frame(width: 22, height: 22)
+            .contentShape(Rectangle())
+    }
+    .buttonStyle(.borderless)
+    .help(help)
+}
+
+struct TaskCard: View {
+    let task: DownloadTaskState
+    @EnvironmentObject private var state: AppState
+    @State private var preview: PreviewRequest?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text(task.label.isEmpty ? "任务" : task.label)
+                    .font(.headline)
+                Text(task.stage)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text(task.progressText)
+                    .font(.caption.monospacedDigit())
+            }
+            if task.isRunning {
+                if let percent = task.percent {
+                    ProgressView(value: percent, total: 100).tint(state.palette.primary)
+                } else {
+                    ProgressView()
+                        .progressViewStyle(.linear)
+                        .tint(state.palette.primary)
+                }
+            } else if task.stage == "已完成" {
+                ProgressView(value: 100, total: 100).tint(.green)
+            }
+            if !task.message.isEmpty {
+                Text(task.message)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+            if !task.mediaInfo.isEmpty {
+                Label(task.mediaInfo, systemImage: "film")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            if !task.isRunning {
+                let allFiles = task.files.isEmpty ? (task.file.map { [$0] } ?? []) : task.files
+                let previewable = allFiles.filter { MediaFileKind.of($0).canPreview }
+                let others = allFiles.filter { !MediaFileKind.of($0).canPreview }
+                if !previewable.isEmpty {
+                    // 图片 / 视频 / 音频 / PDF：缩略图，点一下即放大 / 播放（与安卓端一致）
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(allFiles.count > 1 ? "共 \(allFiles.count) 个文件 · 点缩略图可放大 / 播放" : "点缩略图可放大 / 播放")
+                            .font(.caption.weight(.semibold))
+                        FileThumbStrip(
+                            files: previewable,
+                            onPreview: { index in
+                                preview = PreviewRequest(files: previewable, index: index)
+                            },
+                            onShare: { file in
+                                state.share(files: [file])
+                            },
+                            onDelete: { file in
+                                state.deleteCurrentTaskFile(file)
+                            }
+                        )
+                    }
+                }
+                if !others.isEmpty {
+                    // 不能预览的（安装包 / 压缩包 / 文本等）：保留原来的行样式，补上文件大小
+                    VStack(alignment: .leading, spacing: 2) {
+                        ForEach(Array(others.enumerated()), id: \.offset) { index, file in
+                            HStack(spacing: 8) {
+                                Text(Self.shortFileName(file, index: index))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                                Text(MediaThumbs.sizeText(file))
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                Spacer(minLength: 4)
+                                // 打开 / 分享：图标按钮（与记录卡片一致）
+                                cardIconButton("arrow.up.forward.square", help: "打开") {
+                                    NSWorkspace.shared.open(URL(fileURLWithPath: file))
+                                }
+                                cardIconButton("square.and.arrow.up", help: "分享") {
+                                    state.share(files: [file])
+                                }
+                                cardIconButton("trash", help: "删除这个文件", tint: .red) {
+                                    state.deleteCurrentTaskFile(file)
+                                }
+                            }
+                        }
+                    }
+                }
+                if let file = task.file {
+                    HStack(spacing: 8) {
+                        cardIconButton("folder", help: "在访达中显示") { state.reveal(file: file) }
+                        cardIconButton("arrow.up.forward.square", help: "打开文件") {
+                            NSWorkspace.shared.open(URL(fileURLWithPath: file))
+                        }
+                        cardIconButton("square.and.arrow.up", help: "分享") {
+                            state.share(files: allFiles.isEmpty ? [file] : allFiles)
+                        }
+                        cardIconButton("trash", help: "删除这次下载及其文件", tint: .red) {
+                            state.deleteCurrentTask()
+                        }
+                        Spacer()
+                    }
+                }
+            }
+        }
+        .sheet(item: $preview) { request in
+            MediaPreviewSheet(files: request.files, index: request.index)
+        }
+        .padding(12)
+        .background(Color(nsColor: .controlBackgroundColor))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        // 卡片加一点阴影和边框，和安卓端的卡片风格对齐
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Color.secondary.opacity(0.15))
+        )
+        .shadow(color: .black.opacity(0.06), radius: 5, y: 2)
+    }
+
+    /// 文件名太长时只显示尾部（序号 / 扩展名在后面，一眼能分辨）
+    private static func shortFileName(_ path: String, index: Int) -> String {
+        let name = (path as NSString).lastPathComponent
+        if name.count <= 28 { return name }
+        return "…" + String(name.suffix(26))
+    }
+}

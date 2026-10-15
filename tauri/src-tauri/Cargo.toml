@@ -1,0 +1,20 @@
+[package]
+name = "video-grabber"
+version = "1.9.0"
+description = "视频下载器（Tauri 外壳，复用 Python 引擎）"
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# protocol-asset：允许界面用 asset:// 显示本地文件（缩略图 / 预览 / 播放）
+tauri = { version = "2", features = ["protocol-asset"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true

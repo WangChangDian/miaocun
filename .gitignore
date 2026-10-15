@@ -1,0 +1,30 @@
+# macOS
+.DS_Store
+
+# Swift / SwiftPM
+app/.build/
+.build/
+
+# Android / Gradle
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/.idea/
+*.apk
+*.keystore
+
+# Tauri / Rust
+tauri/src-tauri/target/
+tauri/src-tauri/gen/
+node_modules/
+
+# Python
+__pycache__/
+*.pyc
+
+# 构建产物 / 本地调试
+dist/
+runtime/
+*.log
+.idea/

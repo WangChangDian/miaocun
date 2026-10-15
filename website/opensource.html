@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>开源声明 · 秒存</title>
+  <link rel="icon" href="assets/icon.png" />
+  <link rel="stylesheet" href="legal.css" />
+</head>
+<body>
+  <header>
+    <img src="assets/icon.png" alt="" />
+    <b>秒存</b>
+    <a class="back" href="index.html">返回首页</a>
+  </header>
+
+  <main>
+    <h1>开源声明</h1>
+    <p class="meta">更新日期：2026-10-14 · 对应版本：1.9.0</p>
+
+    <p>
+      秒存自身代码未开源，但使用了多个优秀的开源项目。以下组件均在你本机运行，版权归各自作者所有，
+      依其原始许可证分发。我们对这些组件的源码<b>未做修改</b>（使用上游发布版本）。
+    </p>
+
+    <h2>一、解析与下载组件</h2>
+    <table>
+      <tr><th>组件</th><th>版本 / 来源</th><th>许可证</th></tr>
+      <tr>
+        <td>yt-dlp</td>
+        <td>2026.08.19 · <a href="https://github.com/yt-dlp/yt-dlp" target="_blank" rel="noopener">github.com/yt-dlp/yt-dlp</a></td>
+        <td>Unlicense</td>
+      </tr>
+      <tr>
+        <td>XHS-Downloader（小红书）</td>
+        <td>提交 <code>3261312</code> · <a href="https://github.com/JoeanAmier/XHS-Downloader" target="_blank" rel="noopener">JoeanAmier/XHS-Downloader</a></td>
+        <td>GPL-3.0</td>
+      </tr>
+      <tr>
+        <td>KS-Downloader（快手）</td>
+        <td>提交 <code>7c493d1</code> · <a href="https://github.com/JoeanAmier/KS-Downloader" target="_blank" rel="noopener">JoeanAmier/KS-Downloader</a></td>
+        <td>GPL-3.0</td>
+      </tr>
+      <tr>
+        <td>FFmpeg（音视频合并 / 转码）</td>
+        <td>macOS：imageio-ffmpeg 静态构建（FFmpeg 7.1，GPL 构建）<br />Windows：BtbN/FFmpeg-Builds win64（LGPL 构建）</td>
+        <td>GPL / LGPL</td>
+      </tr>
+    </table>
+
+    <h2>二、运行时与浏览器内核</h2>
+    <table>
+      <tr><th>组件</th><th>版本 / 来源</th><th>许可证</th></tr>
+      <tr>
+        <td>Python（桌面端内置运行时）</td>
+        <td>CPython 3.13.16（python-build-standalone）</td>
+        <td>PSF License</td>
+      </tr>
+      <tr>
+        <td>Playwright + Chromium（登录窗口 / 页面解析）</td>
+        <td><a href="https://playwright.dev" target="_blank" rel="noopener">playwright.dev</a> · Chromium 内核</td>
+        <td>Apache-2.0 · BSD-3-Clause 等</td>
+      </tr>
+    </table>
+
+    <h2>三、Android 端组件</h2>
+    <table>
+      <tr><th>组件</th><th>版本 / 来源</th><th>许可证</th></tr>
+      <tr>
+        <td>youtubedl-android（library / ffmpeg）</td>
+        <td>0.18.1 · <a href="https://github.com/JunkFood02/youtubedl-android" target="_blank" rel="noopener">JunkFood02/youtubedl-android</a></td>
+        <td>GPL-3.0</td>
+      </tr>
+      <tr><td>yt-dlp（随上者内置）</td><td>随版本更新</td><td>Unlicense</td></tr>
+      <tr><td>QuickJS（JS 运行时）</td><td>quickjs</td><td>MIT</td></tr>
+      <tr><td>OkHttp</td><td>square/okhttp</td><td>Apache-2.0</td></tr>
+      <tr><td>AndroidX / Jetpack Compose</td><td>Google</td><td>Apache-2.0</td></tr>
+      <tr><td>Kotlin 标准库</td><td>JetBrains</td><td>Apache-2.0</td></tr>
+    </table>
+
+    <h2>四、关于 GPL 组件的说明</h2>
+    <ul>
+      <li>XHS-Downloader、KS-Downloader、youtubedl-android 采用 GPL-3.0；macOS 版内置的 FFmpeg 为 GPL 构建；</li>
+      <li>它们均以<b>独立可执行文件 / 独立进程</b>的形式与主程序一起分发，源码可在上表链接的仓库中获取；</li>
+      <li>如你希望获得这些组件对应版本的完整源码包，可通过应用内「设置 → 提建议」联系我们。</li>
+    </ul>
+
+    <h2>五、致谢</h2>
+    <p>感谢所有开源作者。正是这些项目让本工具得以把精力放在体验与跨端一致性上。</p>
+  </main>
+
+  <footer class="page-foot">秒存 · 第三方组件版权归原作者所有</footer>
+</body>
+</html>
