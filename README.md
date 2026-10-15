@@ -4,12 +4,11 @@
 
 **粘贴链接，即刻下载**
 
-macOS / Windows / Android 三端同款的本地素材备份工具 · 开源核心版
+macOS / Windows / Android 三端同款的本地素材备份工具
 
 MiaoCun — paste a link, save it locally. A cross-platform media backup tool.
 
-[📥 下载完整版](https://music.aiyun-jing.com:8443/download/) ·
-[🌐 官网](https://music.aiyun-jing.com:8443/download/) ·
+[📥 下载地址](https://music.aiyun-jing.com:8443/download/) ·
 [📦 发布记录](https://github.com/WangChangDian/miaocun-releases) ·
 [📄 MIT License](LICENSE)
 
@@ -41,17 +40,6 @@ MiaoCun — paste a link, save it locally. A cross-platform media backup tool.
 ## 开源范围（请先读这一段）
 
 本仓库是**开源核心版**，与官网发布的完整版功能有差异：
-
-| | 开源核心版（本仓库） | 完整版（官网发布） |
-| --- | --- | --- |
-| 三端客户端完整源码 | ✅ | ✅（同源） |
-| 引擎框架（协议 / 下载管理 / 通用解析 / 嗅探） | ✅ | ✅ |
-| 国内平台适配层（抖音 / 快手 / 小红书 / 视频号等） | ❌ 占位实现 | ✅ |
-| 云控后台与部署配置 | ❌ 不公开 | ✅ |
-
-> 国内平台的适配层涉及平台接口细节与合规边界，不在开源范围内；
-> 开源版调用到这些平台时会给出明确提示（而不是静默失败）。
-> 欢迎社区按 `engine/README.md` 的接口约定贡献自己的实现。
 
 ## 架构
 
