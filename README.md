@@ -6,7 +6,7 @@
 
 **粘贴链接，即刻下载。**
 
-macOS · Windows · Android 三端同款的本地素材备份工具 —— 源码开放
+macOS · Windows · Android 三端同款的本地素材备份工具
 
 <sub>MiaoCun — paste a link, save it locally. A cross-platform media backup tool with an open-source core.</sub>
 
@@ -17,7 +17,7 @@ macOS · Windows · Android 三端同款的本地素材备份工具 —— 源�
 [![Price](https://img.shields.io/badge/price-%E5%AE%8C%E5%85%A8%E5%85%8D%E8%B4%B9-ff6a00.svg?style=flat-square)](#)
 [![Engine](https://img.shields.io/badge/engine-Python%203.13%20%C2%B7%20JSON%20Lines-ff6a00.svg?style=flat-square)](engine/README.md)
 
-[⬇️ 下载完整版](https://music.aiyun-jing.com:8443/download/) ·
+[⬇️ 下载](https://music.aiyun-jing.com:8443/download/) ·
 [📦 发布记录](https://github.com/WangChangDian/miaocun-releases) ·
 [🐛 问题反馈](https://github.com/WangChangDian/miaocun/issues)
 
@@ -75,24 +75,6 @@ SwiftUI 外壳 (app/)          Tauri 外壳 (tauri/)          Android (android/)
   （协议详见 [`engine/README.md`](engine/README.md)）；
 - 桌面端内置完整运行时（Python + ffmpeg + 浏览器内核），用户侧零安装；
 - 安卓端内置 yt-dlp + QuickJS + ffmpeg，首次启动初始化约 20–30 秒。
-
-## 开源范围（坦率说明）
-
-本仓库是**开源核心版**，与官网发布的完整版有差异：
-
-| | 开源核心版（本仓库） | 完整版（官网发布） |
-| --- | :---: | :---: |
-| 三端客户端完整源码（SwiftUI / Tauri / Kotlin） | ✅ | ✅（同源） |
-| 引擎框架（协议 / 多线程下载 / 通用解析 / 网页嗅探） | ✅ | ✅ |
-| 官网源码 + 构建脚本 + 开发文档 | ✅ | ✅ |
-| 国内平台适配层（抖音 / 快手 / 小红书 / 视频号等） | ❌ 占位实现 | ✅ |
-| 云控后台（版本管理 / 反馈 / 设备管理） | ❌ 不公开 | ✅ |
-| 部署配置 / 服务器与运维信息 | ❌ 不公开 | — |
-
-> **为什么不全开源？** 国内平台的适配实现涉及平台接口细节与合规边界，云控后台包含部署与内部配置；
-> 这两部分保持闭源。开源版调用到这些平台时会给出明确提示，而不是静默失败——
-> 通用解析、直链下载、网页嗅探、三端界面与框架全部可用，欢迎社区按
-> [`engine/README.md`](engine/README.md) 的接口自行补齐实现。
 
 ## 和常见方案对比
 
@@ -156,9 +138,10 @@ miaocun/
 
 ## 常见问题
 
-**Q：为什么抖音 / 快手 / 小红书链接提示「未包含在开源版」？**
-这类平台的适配层不在开源范围（见上方说明）。完整版支持；也可以按
-`engine/README.md` 的约定自行实现后补回 `engine/bridge.py`。
+**Q：为什么有的平台链接会提示「未包含在开源版」？**
+部分国内平台的适配实现与云控后台不在开源范围（合规与维护考虑），这类链接会明确提示而不是静默失败；
+官网发布版可正常使用这些平台。通用解析、直链下载、网页嗅探与三端界面均完整可用，
+也可以按 [`engine/README.md`](engine/README.md) 的约定自行实现后补回 `engine/bridge.py`。
 
 **Q：自己编译的安装包能覆盖官方版吗？**
 不能。官方包与自编译包签名不同，需先卸载再安装；两者共用同一个应用数据目录
