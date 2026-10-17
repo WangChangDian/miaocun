@@ -1293,9 +1293,8 @@ BROWSER_LOCK = threading.Lock()  # 浏览器任务串行化（共享专属配置
 
 def friendly_error(platform: str, error: str) -> tuple[str, str]:
     text = error or ""
-    if "开源版" in text:
-        # 开源裁剪版：平台适配层不在开源范围，直接透传自定义提示
-        return ("OSS_LIMIT", text.strip()[:300])
+    if "暂不支持" in text:
+        return ("UNSUPPORTED", text.strip()[:300])
     lowered = text.lower()
     if "腾讯元宝" in text or "视频号" in text:
         return (
@@ -1311,6 +1310,11 @@ def friendly_error(platform: str, error: str) -> tuple[str, str]:
         )
     if "no video could be found in this tweet" in lowered:
         return ("NO_MEDIA", "该推文里没有视频（纯文字或图片推文不支持下载）。")
+    if "fresh cookies" in lowered:
+        return (
+            "NEED_COOKIE",
+            "该内容需要有效的 Cookie：请在「设置 → Cookie 管理」里配置对应平台的 Cookie 后再试。",
+        )
     if "sign in" in lowered or "cookies" in lowered:
         # X / YouTube 常见的「Sign in to confirm your age」这类风控，多半是登录态过期
         return (
@@ -1602,78 +1606,6 @@ def download_media_urls(
 
 
 ANSI_PATTERN = re.compile(r"\x1b\[[0-9;]*m")
-
-
-def run_adapter(task: "Task", engine: str, args: dict) -> dict:
-    python = engine_python(engine)
-    root = engine_root(engine)
-    script = Path(__file__).resolve().parent / "adapters" / f"{engine}_task.py"
-    if not python.exists() or not root.exists():
-        raise RuntimeError(f"{engine} 引擎未初始化，请先在设置中执行「初始化 / 更新引擎」")
-
-    env = engine_env(engine)
-    env.update({
-        "ENGINE_ROOT": str(root),
-        "PYTHONUNBUFFERED": "1",
-        "PYTHONIOENCODING": "utf-8",
-        "PYTHONDONTWRITEBYTECODE": "1",
-    })
-    process = subprocess.Popen(
-        [str(python), str(script), json.dumps(args, ensure_ascii=False)],
-        cwd=str(root),
-        env=env,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        bufsize=1,
-    )
-    task.process = process
-
-    def forward(line: str) -> None:
-        clean = ANSI_PATTERN.sub("", line).rstrip()
-        if not clean:
-            return
-        if clean.startswith("@@PROGRESS "):
-            try:
-                payload = json.loads(clean[len("@@PROGRESS ") :])
-            except ValueError:
-                return
-            downloaded = payload.get("completed_bytes")
-            total = payload.get("total_bytes")
-            if isinstance(downloaded, int) and isinstance(total, int) and total > 0:
-                emit(
-                    {
-                        "id": task.id,
-                        "event": "progress",
-                        "percent": round(downloaded / total * 100, 1),
-                        "downloaded": downloaded,
-                        "total": total,
-                    }
-                )
-            else:
-                emit({"id": task.id, "event": "stage", **payload})
-        elif clean.startswith("@@META "):
-            try:
-                payload = json.loads(clean[len("@@META ") :])
-            except ValueError:
-                return
-            emit({"id": task.id, "event": "meta", **payload})
-        else:
-            log(f"[{engine}] {clean}", task.id)
-
-    assert process.stderr is not None
-    for line in process.stderr:
-        forward(line)
-        if task.cancelled:
-            task.terminate()
-
-    stdout, _ = process.communicate()
-    if task.cancelled:
-        raise TaskCancelled()
-    if process.returncode not in (0, 1) or not stdout.strip():
-        raise RuntimeError(f"{engine} 引擎退出码 {process.returncode}，输出为空")
-    last_line = stdout.strip().splitlines()[-1]
-    return json.loads(last_line)
 
 
 def move_single_file(source: str, out_dir: Path, fallback_name: str) -> str:
@@ -2107,7 +2039,7 @@ def download_with_ytdlp(task: "Task", url: str, settings: dict, platform: str) -
             label = PLATFORM_DOMAINS.get(platform, {}).get("label", platform)
             log(
                 f"{label} 这次只拿到试听片段（{actual:.0f}s / 全长 {expected:.0f}s）："
-                f"在「设置 → Cookie 管理 → {label}」配一份浏览器 Cookie 才能下完整版",
+                f"在「设置 → Cookie 管理 → {label}」配一份浏览器 Cookie 才能下完整歌曲",
                 task.id,
                 echo=True,
             )
@@ -2717,63 +2649,53 @@ def handle_cookie_clear(task: "Task", request: dict) -> None:
     emit({"id": task.id, "event": "done", "kind": "cookie_clear", "platform": platform, "cookie_status": cookie_status_payload()})
 
 
-# ---------------------------------------------------------------- 开源版占位实现
+# ---------------------------------------------------------------- 通用解析兜底
 #
-# 为保护各平台的适配细节与合规边界，下面这些函数在开源版里是「占位实现」：
-# 完整版中它们是各平台的真实解析/下载逻辑。占位版保证：
-#   1. 开源版仍可正常运行通用能力 —— 直链下载、网页资源嗅探、
-#      以及 yt-dlp 支持的上千个站点（YouTube / X / B 站 / 微博 / Reddit 等）；
-#   2. 调用到未开源的平台时，给出明确提示而不是静默失败。
-#
-# 想自己补上某个平台？直接把这些函数实现掉即可（参数含义见完整版调用处，
-# 返回 dict：{"files": [...], "title": str, "author": str, "platform": str, "source": str}）。
-
-OSS_HINT = (
-    "该平台的适配层未包含在开源版中：可前往官网下载完整版 "
-    "https://music.aiyun-jing.com:8443/download/ ，"
-    "或按 engine/README.md 的接口约定自行实现后补回本模块。"
-)
-
-
-def _oss_missing(name: str):
-    raise RuntimeError(f"「{name}」{OSS_HINT}")
+# 引擎按「专用适配 → 通用解析」的顺序处理链接：
+#   - 常规视频站点统一交给 yt-dlp 通用解析（支持上千个站点）；
+#   - 需要登录态 / 页面签名的入口（如主页批量列表）在缺少凭证时给出明确提示；
+#   - 想扩展解析能力？按 engine/README.md 的约定实现这些入口函数即可
+#     （返回 dict：{"files": [...], "title": str, "author": str, "platform": str, "source": str}）。
 
 
 def download_douyin(task: "Task", url: str, settings: dict, raw_url: "str | None" = None) -> dict:
-    _oss_missing("抖音")
+    """抖音：走 yt-dlp 通用解析。"""
+    return download_with_ytdlp(task, url, settings, "douyin")
 
 
 def download_xhs(task: "Task", url: str, settings: dict, hint: str = "") -> dict:
-    _oss_missing("小红书")
+    """小红书：走 yt-dlp 通用解析。"""
+    return download_with_ytdlp(task, url, settings, "xiaohongshu")
 
 
 def download_ks(task: "Task", url: str, settings: dict) -> dict:
-    _oss_missing("快手")
-
-
-def download_wxchannels(task: "Task", url: str, settings: dict, raw_url: str) -> dict:
-    _oss_missing("微信视频号")
+    """快手：走 yt-dlp 通用解析。"""
+    return download_with_ytdlp(task, url, settings, "kuaishou")
 
 
 def download_instagram(task: "Task", url: str, settings: dict, raw_url: str) -> dict:
-    _oss_missing("Instagram")
+    """Instagram：走 yt-dlp 通用解析。"""
+    return download_with_ytdlp(task, url, settings, "instagram")
+
+
+def download_wxchannels(task: "Task", url: str, settings: dict, raw_url: str) -> dict:
+    raise RuntimeError("该链接需要平台鉴权，当前暂不支持。")
 
 
 def handle_batch(task: "Task", request: dict) -> None:
-    _oss_missing("主页 / 收藏夹批量下载")
+    raise RuntimeError("批量列表需要账号权限，当前暂不支持该操作。")
 
 
 def fetch_douyin_detail_api(task: "Task", aweme_id: str) -> dict:
-    _oss_missing("抖音")
+    raise RuntimeError("该接口需要页面签名，当前暂不支持。")
 
 
 def douyin_cookie_dict() -> dict:
-    """占位：通用下载助手在没有显式传 Cookie 时的默认值。开源版返回空字典。"""
     return {}
 
 
 def check_cookie_validity(platform: str, cookie: str, task: "Task | None" = None):
-    """开源版不做各平台接口级校验，返回 None → 调用方自动回退「连通性检查」。"""
+    """接口级校验不可用时返回 None → 调用方自动回退「连通性检查」。"""
     return None
 
 
@@ -2790,7 +2712,7 @@ def wechat_article_videos(page_url: str, frames: list, task: "Task | None" = Non
 
 
 DOUYIN_PROBE_ID = ""
-# ---------------------------------------------------------------- 占位实现结束
+# ---------------------------------------------------------------- 兜底结束
 def dispatch(request: dict) -> None:
     task_id = request.get("id") or uuid.uuid4().hex[:8]
     command = request.get("cmd")

@@ -24,13 +24,14 @@
 `cookie_status` / `cookie_set` / `cookie_clear` / `refresh_cookies` /
 `cookie_login` / `cookie_test` / `set_settings` / `update_engines`。
 
-## 开源版的平台适配层
+## 平台解析策略
 
-`bridge.py` 里，各平台的解析/下载以函数形式组织（由 `handle_download()` 分发）。
-在**开源版**中，国内平台的实现是「占位实现」（文件里有清晰的分节注释）：
-调用时会抛出带说明的 `RuntimeError`，界面会展示「未包含在开源版」的提示。
+`bridge.py` 里，各平台的解析 / 下载以函数形式组织（由 `handle_download()` 分发），
+按「专用适配 → 通用解析」的顺序处理：
 
-想自己补上一个平台，按下面的约定实现同名函数即可：
+- 常规视频站点交给 `download_with_ytdlp()`（yt-dlp 生态，覆盖上千站点）；
+- 需要登录态 / 页面签名的入口（如主页批量列表）在缺少凭证时给出明确提示；
+- 想扩展新的解析能力，按下面的约定实现对应入口函数即可：
 
 ```python
 def download_xxx(task: "Task", url: str, settings: dict, ...) -> dict:
@@ -55,7 +56,7 @@ def download_xxx(task: "Task", url: str, settings: dict, ...) -> dict:
 - `http_session()` —— 带代理与会话复用的 HTTP 客户端；
 - `probe_remote()` / `remote_size()` —— 探测远端文件类型与大小。
 
-## 通用能力（开源版开箱即用）
+## 通用能力（开箱即用）
 
 - **yt-dlp 通用解析**：`download_with_ytdlp()` 覆盖 YouTube / X / B 站 / 微博 /
   Reddit / Vimeo / Twitch 等上千站点（yt-dlp 为运行时依赖，Unlicense）；
@@ -73,5 +74,5 @@ echo '{"id":"1","cmd":"ping"}' | python3.13 engine/bridge.py
 
 ## 许可证提示
 
-仓库不打包 GPL 组件；完整版中用于国内平台的部分第三方引擎（GPL-3.0）以
-「运行时获取」方式使用。若你补回的适配实现调用了这类组件，请自行遵守其许可证。
+仓库不打包 GPL 组件；部分第三方引擎（GPL-3.0）以「运行时获取」方式使用。
+若你的扩展实现调用了这类组件，请自行遵守其许可证。
