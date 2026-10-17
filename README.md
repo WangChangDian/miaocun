@@ -21,6 +21,9 @@ macOS · Windows · Android 三端同款的本地素材备份工具
 [📦 发布记录](https://github.com/WangChangDian/miaocun-releases) ·
 [🐛 问题反馈](https://github.com/WangChangDian/miaocun/issues)
 
+> 通用解析由开源项目 **[yt-dlp](https://github.com/yt-dlp/yt-dlp)**（Unlicense）驱动，覆盖 **1700+** 站点；
+> 秒存在此基础上做了三端界面、多线程分段下载与平台专项优化。
+
 </div>
 
 ---
@@ -41,7 +44,7 @@ macOS · Windows · Android 三端同款的本地素材备份工具
 | --- | --- |
 | 🔗 **粘贴即下载** | 作品链接、分享口令、短链、mp4 / PDF 等直链，粘进输入框就开工 |
 | ⚡ **多线程分段下载** | 最多 **8 段并发**（类 IDM）+ 断点续传 + 多 CDN 重试，大文件跑满带宽 |
-| 🧲 **上千站点通用解析** | 基于 yt-dlp：YouTube（4K 自动合并）、X、B 站、微博、Reddit、Vimeo、Twitch、网易云… |
+| 🧲 **1700+ 站点通用解析** | 基于开源项目 **yt-dlp**（Unlicense）：YouTube（4K 自动合并）、X、B 站、微博、Reddit、Vimeo、Twitch、网易云… |
 | 🕵️ **网页资源嗅探** | 普通网页里的图片 / 视频自动识别，多文件勾选批量保存 |
 | 🗂 **下载管理** | 缩略图预览、下载记录、一键打开、多选分享、批量归档 |
 | 🎨 **细节讲究** | 浅橙 / 浅绿双主题、文件名模板、自定义保存目录、代理设置 |
@@ -139,7 +142,7 @@ miaocun/
 ## 常见问题
 
 **Q：各平台的解析是怎么实现的？**
-引擎对链接按「专用适配 → 通用解析」处理：常规站点统一走 yt-dlp 通用解析（覆盖上千个站点），
+引擎对链接按「专用适配 → 通用解析」处理：常规站点统一走 yt-dlp 通用解析（覆盖 1700+ 个站点），
 需要登录态或页面签名的入口会给出明确提示。扩展新平台按
 [`engine/README.md`](engine/README.md) 的约定实现即可。
 

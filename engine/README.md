@@ -29,7 +29,7 @@
 `bridge.py` 里，各平台的解析 / 下载以函数形式组织（由 `handle_download()` 分发），
 按「专用适配 → 通用解析」的顺序处理：
 
-- 常规视频站点交给 `download_with_ytdlp()`（yt-dlp 生态，覆盖上千站点）；
+- 常规视频站点交给 `download_with_ytdlp()`（yt-dlp 生态，覆盖 1700+ 站点）；
 - 需要登录态 / 页面签名的入口（如主页批量列表）在缺少凭证时给出明确提示；
 - 想扩展新的解析能力，按下面的约定实现对应入口函数即可：
 
@@ -59,7 +59,7 @@ def download_xxx(task: "Task", url: str, settings: dict, ...) -> dict:
 ## 通用能力（开箱即用）
 
 - **yt-dlp 通用解析**：`download_with_ytdlp()` 覆盖 YouTube / X / B 站 / 微博 /
-  Reddit / Vimeo / Twitch 等上千站点（yt-dlp 为运行时依赖，Unlicense）；
+  Reddit / Vimeo / Twitch 等 1700+ 站点（yt-dlp 为运行时依赖，Unlicense）；
 - **直链下载**：任意 HTTP(S) 文件直链，类型探测后直接归档；
 - **网页嗅探**：`download_page_resources()` 从普通网页提取图片 / 视频并批量保存。
 
