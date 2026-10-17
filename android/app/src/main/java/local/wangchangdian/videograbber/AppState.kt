@@ -31,6 +31,8 @@ object AppState {
     val accountPhone = MutableStateFlow("")
     val accountNotice = MutableStateFlow<String?>(null)
     val cloudCookies = MutableStateFlow<Map<String, Map<String, Map<String, Any>>>>(emptyMap())
+    /** 多链接批量任务（null = 当前没有批量卡片） */
+    val batch = MutableStateFlow<BatchLinkState?>(null)
 
     private const val PREFS = "videograbber"
     private const val KEY_HISTORY = "history"
@@ -73,6 +75,69 @@ object AppState {
     fun initAccount() {
         accountLoggedIn.value = accountToken().isNotBlank()
         accountPhone.value = prefs.getString(KEY_ACCOUNT_PHONE, "") ?: ""
+    }
+
+    // ------------------------------------------------------------ 多链接批量
+
+    fun startBatch(id: String, items: List<BatchLinkItem>) {
+        batch.value = BatchLinkState(id = id, items = items)
+    }
+
+    fun setBatchActive(index: Int) {
+        val state = batch.value ?: return
+        batch.value = state.copy(activeIndex = index)
+    }
+
+    /** 更新单条批量状态；files 等参数留空时保留旧值（解析 → 下载 → 成功分阶段回写） */
+    fun updateBatchItem(
+        index: Int,
+        status: BatchItemStatus,
+        message: String = "",
+        errorCode: String = "",
+        files: List<String> = emptyList(),
+        fileNames: List<String> = emptyList(),
+        sizes: List<Long> = emptyList(),
+        title: String = "",
+    ) {
+        val state = batch.value ?: return
+        if (index !in state.items.indices) return
+        val items = state.items.toMutableList()
+        val old = items[index]
+        items[index] = old.copy(
+            status = status,
+            message = message,
+            errorCode = errorCode,
+            files = files.ifEmpty { old.files },
+            fileNames = fileNames.ifEmpty { old.fileNames },
+            sizes = sizes.ifEmpty { old.sizes },
+            title = title.ifBlank { old.title },
+        )
+        batch.value = state.copy(
+            items = items,
+            finished = items.all { it.status.terminal },
+        )
+    }
+
+    /** 取消：所有未结束的条目标记为已取消（正在下载的那条由 DownloadService 协作中断） */
+    fun cancelRemainingBatchItems() {
+        val state = batch.value ?: return
+        val items = state.items.map { item ->
+            if (item.status.terminal) item
+            else item.copy(status = BatchItemStatus.CANCELLED, message = "已取消")
+        }
+        batch.value = state.copy(items = items, finished = true)
+    }
+
+    /** 驱动队列里已经没有待解析条目时，若都已结束则收尾 */
+    fun refreshBatchFinished() {
+        val state = batch.value ?: return
+        if (!state.finished && state.items.all { it.status.terminal }) {
+            batch.value = state.copy(finished = true)
+        }
+    }
+
+    fun clearBatch() {
+        batch.value = null
     }
 
     fun setSaveTree(uri: String, name: String) {

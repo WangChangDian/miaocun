@@ -456,6 +456,52 @@ fn share_file(path: String) -> Result<String, String> {
     Err("当前平台不支持分享".into())
 }
 
+/// 分享多个文件：Windows 把多个文件对象放进剪贴板，可直接粘贴到微信 / QQ；macOS 复制到剪贴板。
+#[tauri::command]
+fn share_files(paths: Vec<String>) -> Result<String, String> {
+    let items: Vec<String> = paths.into_iter().filter(|path| !path.trim().is_empty()).collect();
+    if items.is_empty() {
+        return Err("路径为空".into());
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let escaped: Vec<String> = items
+            .iter()
+            .map(|path| format!("'{}'", path.replace('\'', "''")))
+            .collect();
+        let script = format!("Set-Clipboard -LiteralPath {}", escaped.join(","));
+        let mut command = Command::new("powershell");
+        command.args(["-NoProfile", "-Command", &script]);
+        hide_console(&mut command);
+        match command.status() {
+            Ok(code) if code.success() => {
+                return Ok(format!("已复制 {} 个文件，可直接粘贴到微信 / QQ 发送", items.len()))
+            }
+            Ok(code) => return Err(format!("复制失败，退出码 {code}")),
+            Err(error) => return Err(format!("复制失败: {error}")),
+        }
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let list = items
+            .iter()
+            .map(|path| format!("POSIX file \"{}\"", path.replace('"', "\\\"")))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let mut command = Command::new("osascript");
+        command.args(["-e", &format!("set the clipboard to {{{list}}}")]);
+        match command.status() {
+            Ok(code) if code.success() => {
+                return Ok(format!("已复制 {} 个文件，可直接粘贴到微信 / QQ 发送", items.len()))
+            }
+            Ok(code) => return Err(format!("复制失败，退出码 {code}")),
+            Err(error) => return Err(format!("复制失败: {error}")),
+        }
+    }
+    #[allow(unreachable_code)]
+    Err("当前平台不支持分享".into())
+}
+
 /// 清空下载历史（可同时删除记录对应的文件），返回 (清空条数, 删除文件数)
 #[tauri::command]
 fn clear_history(delete_files: bool) -> Result<Value, String> {
@@ -671,6 +717,7 @@ fn main() {
             pick_folder,
             open_download_dir,
             share_file,
+            share_files,
             reveal_file,
             clear_history,
             delete_history_item,

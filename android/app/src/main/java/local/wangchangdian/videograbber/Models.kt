@@ -46,6 +46,9 @@ data class ExtractResult(
      * 与 [mediaUrls] 一一对应；为空表示按 [kind] 统一处理。
      */
     val mediaKinds: List<String> = emptyList(),
+    /** 多链接批量：所属批量任务 id 与条目下标（单链接下载为空） */
+    val batchId: String? = null,
+    val batchIndex: Int = -1,
 ) {
     val isVideo: Boolean get() = kind == KIND_VIDEO
 
@@ -57,6 +60,10 @@ data class ExtractResult(
         if (!audioUrl.isNullOrBlank()) put("audioUrl", audioUrl)
         put("mediaUrls", org.json.JSONArray(mediaUrls))
         if (mediaKinds.isNotEmpty()) put("mediaKinds", org.json.JSONArray(mediaKinds))
+        if (!batchId.isNullOrBlank()) {
+            put("batchId", batchId)
+            put("batchIndex", batchIndex)
+        }
     }.toString()
 
     companion object {
@@ -84,9 +91,52 @@ data class ExtractResult(
                 kind = kind,
                 audioUrl = json.optString("audioUrl").takeIf { it.isNotBlank() },
                 mediaKinds = kinds,
+                batchId = json.optString("batchId").takeIf { it.isNotBlank() },
+                batchIndex = json.optInt("batchIndex", -1),
             )
         }
     }
+}
+
+/** 多链接批量的单条状态 */
+enum class BatchItemStatus(val label: String) {
+    WAITING("等待"),
+    PARSING("解析中"),
+    QUEUED("等待下载"),
+    DOWNLOADING("下载中"),
+    SUCCESS("成功"),
+    FAILED("失败"),
+    SKIPPED("已跳过"),
+    CANCELLED("已取消");
+
+    val terminal: Boolean
+        get() = this == SUCCESS || this == FAILED || this == SKIPPED || this == CANCELLED
+}
+
+data class BatchLinkItem(
+    val url: String,
+    val platform: Platform,
+    val title: String = "",
+    val status: BatchItemStatus = BatchItemStatus.WAITING,
+    val message: String = "",
+    val errorCode: String = "",
+    val files: List<String> = emptyList(),
+    val fileNames: List<String> = emptyList(),
+    val sizes: List<Long> = emptyList(),
+)
+
+data class BatchLinkState(
+    val id: String,
+    val items: List<BatchLinkItem>,
+    val activeIndex: Int = -1,
+    val finished: Boolean = false,
+) {
+    val succeeded: Int get() = items.count { it.status == BatchItemStatus.SUCCESS }
+    val failed: Int get() = items.count { it.status == BatchItemStatus.FAILED }
+    val cancelled: Int get() = items.count { it.status == BatchItemStatus.CANCELLED }
+    val skipped: Int get() = items.count { it.status == BatchItemStatus.SKIPPED }
+    val doneCount: Int get() = items.count { it.status.terminal }
+    val percent: Int get() = if (items.isEmpty()) 0 else doneCount * 100 / items.size
 }
 
 data class DownloadState(

@@ -41,6 +41,22 @@ object UrlUtils {
         return match.value.trimEnd { it in TRAILING }
     }
 
+    /**
+     * 从整段文本里提取**全部**链接（多链接批量用）。
+     * 规则与单链接、桌面端/引擎保持一致：中文标点不吞入、去尾随标点、保序去重、最多 [limit] 条。
+     */
+    fun extractAllUrls(text: String?, limit: Int = 50): List<String> {
+        val raw = text?.trim().orEmpty()
+        if (raw.isEmpty()) return emptyList()
+        val seen = LinkedHashSet<String>()
+        for (match in urlRegex.findAll(raw)) {
+            val url = match.value.trimEnd { it in TRAILING }
+            if (url.isNotBlank()) seen.add(url)
+            if (seen.size >= limit) break
+        }
+        return seen.toList()
+    }
+
     fun detectPlatform(url: String?): Platform {
         if (url.isNullOrBlank()) return Platform.UNKNOWN
         val host = runCatching { URL(url).host.lowercase() }.getOrNull() ?: return Platform.UNKNOWN

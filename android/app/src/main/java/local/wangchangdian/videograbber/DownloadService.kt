@@ -54,8 +54,10 @@ class DownloadService : Service() {
 
         private val pending = ConcurrentLinkedQueue<ExtractResult>()
         @Volatile private var workerRunning = false
+        @Volatile private var cancelRequested = false
 
         fun start(context: Context, result: ExtractResult) {
+            cancelRequested = false
             pending.add(result)
             syncQueueState()
             val intent = Intent(context, DownloadService::class.java)
@@ -65,6 +67,13 @@ class DownloadService : Service() {
             } else {
                 context.startService(intent)
             }
+        }
+
+        /** 取消当前下载 + 清空整个等待队列（多链接批量的「取消」按钮用） */
+        fun cancelAll() {
+            cancelRequested = true
+            pending.clear()
+            syncQueueState()
         }
 
         private fun syncQueueState() {
@@ -133,6 +142,10 @@ class DownloadService : Service() {
 
     private suspend fun runDownload(result: ExtractResult) {
         val baseName = buildName(result.author, result.title)
+        if (result.batchId != null && result.batchIndex >= 0) {
+            AppState.setBatchActive(result.batchIndex)
+            AppState.updateBatchItem(result.batchIndex, BatchItemStatus.DOWNLOADING, message = "下载中")
+        }
         try {
             var totalBytes = 0L
             var savedCount = 0
@@ -225,17 +238,35 @@ class DownloadService : Service() {
             )
             notifyFinal("下载完成", "${displayTitle.take(30)} · $sizeText · $savedCount 个文件")
             LogStore.log("下载", "任务完成: ${displayTitle.take(30)} ($sizeText)")
+            if (result.batchId != null && result.batchIndex >= 0) {
+                AppState.updateBatchItem(
+                    result.batchIndex,
+                    BatchItemStatus.SUCCESS,
+                    title = displayTitle.ifBlank { baseName },
+                    files = savedUris.toList(),
+                    fileNames = savedNames.toList(),
+                    sizes = savedSizes.toList(),
+                )
+            }
         } catch (error: Exception) {
-            LogStore.log("下载", "任务失败: ${error.message}")
+            val cancelled = cancelRequested && result.batchId != null
+            LogStore.log("下载", if (cancelled) "任务已取消" else "任务失败: ${error.message}")
             AppState.download.value = DownloadState(
                 platform = result.platform,
                 title = result.title,
                 author = result.author,
-                stage = "失败",
+                stage = if (cancelled) "已取消" else "失败",
                 failed = true,
-                message = error.message ?: "下载失败",
+                message = if (cancelled) "已取消" else (error.message ?: "下载失败"),
             )
-            notifyFinal("下载失败", error.message ?: "未知错误")
+            if (result.batchId != null && result.batchIndex >= 0) {
+                AppState.updateBatchItem(
+                    result.batchIndex,
+                    if (cancelled) BatchItemStatus.CANCELLED else BatchItemStatus.FAILED,
+                    message = if (cancelled) "已取消" else (error.message ?: "下载失败"),
+                )
+            }
+            notifyFinal(if (cancelled) "下载已取消" else "下载失败", error.message ?: "未知错误")
         }
     }
 
@@ -322,6 +353,7 @@ class DownloadService : Service() {
             merged.delete()
             LogStore.log("下载", "音视频合并完成: ${cacheFile.length()} 字节")
         }
+        if (cancelRequested) throw java.util.concurrent.CancellationException("已取消")
 
         val customTree = AppState.saveTree.value
         if (customTree.isNotBlank()) {
@@ -409,6 +441,7 @@ class DownloadService : Service() {
     private suspend fun downloadWithYtDlp(
         result: ExtractResult,
     ): YtDlpResult = withContext(Dispatchers.IO) {
+        if (cancelRequested) throw java.util.concurrent.CancellationException("已取消")
         val url = result.mediaUrls.first()
         val staging = File(cacheDir, "ytdlp-${System.currentTimeMillis()}").apply { mkdirs() }
         val request = com.yausername.youtubedl_android.YoutubeDLRequest(url)
@@ -631,6 +664,7 @@ class DownloadService : Service() {
     /** 先尝试多连接分段下载，失败则回退单连接（带断点续传） */
     private suspend fun downloadToCache(urls: List<String>, cacheFile: File, result: ExtractResult) {
         if (urls.isEmpty()) error("没有可用的下载地址")
+        if (cancelRequested) throw java.util.concurrent.CancellationException("已取消")
         val probe = probe(urls.first(), result)
         LogStore.log("下载", "探测: 大小=${probe?.first ?: -1} 支持Range=${probe?.second ?: false} url=${urls.first().take(80)}")
         if (probe != null && probe.first > SEGMENT_THRESHOLD && probe.second) {
@@ -760,6 +794,7 @@ class DownloadService : Service() {
         var offset = start + (if (partFile.exists()) partFile.length() else 0L)
         var attempt = 0
         while (offset <= end && attempt < 6) {
+            if (cancelRequested) throw java.util.concurrent.CancellationException("已取消")
             val url = urls[attempt % urls.size]
             attempt++
             try {
@@ -776,6 +811,7 @@ class DownloadService : Service() {
                         body.byteStream().use { input ->
                             val buffer = ByteArray(128 * 1024)
                             while (offset <= end) {
+                                if (cancelRequested) throw java.util.concurrent.CancellationException("已取消")
                                 val read = input.read(buffer)
                                 if (read <= 0) break
                                 raf.write(buffer, 0, read)
@@ -786,6 +822,7 @@ class DownloadService : Service() {
                     }
                 }
             } catch (error: Exception) {
+                if (cancelRequested) throw java.util.concurrent.CancellationException("已取消")
                 offset = start + (if (partFile.exists()) partFile.length() else 0L)
                 if (attempt >= 6) throw error
             }
@@ -847,6 +884,7 @@ class DownloadService : Service() {
                             val buffer = ByteArray(256 * 1024)
                             var lastTick = 0L
                             while (true) {
+                                if (cancelRequested) throw java.util.concurrent.CancellationException("已取消")
                                 val read = input.read(buffer)
                                 if (read <= 0) break
                                 raf.write(buffer, 0, read)
@@ -867,6 +905,7 @@ class DownloadService : Service() {
                     "连接提前结束（$downloaded/$total），地址：${url.take(90)}",
                 )
             } catch (error: Exception) {
+                if (cancelRequested) throw java.util.concurrent.CancellationException("已取消")
                 lastError = error
                 LogStore.log("下载", "单连接重试($attempt): ${error.message}")
                 AppState.download.value = AppState.download.value?.copy(stage = "网络波动，重试中")

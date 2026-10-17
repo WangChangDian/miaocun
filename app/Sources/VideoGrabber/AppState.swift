@@ -6,6 +6,7 @@ import SwiftUI
 @MainActor
 final class AppState: ObservableObject {
     @Published var urlText: String = ""
+    @Published var batch: BatchDownloadState?
     @Published var engines: [EngineInfo] = []
     @Published var currentTask: DownloadTaskState?
     @Published var history: [HistoryItem] = []
@@ -34,6 +35,10 @@ final class AppState: ObservableObject {
     @Published var accountLoggedIn: Bool = false
     @Published var accountNotice: String?
     @Published var cloudCookies: [String: [String: Any]] = [:]
+    /// 批量任务里正在跑的那一条的 bridge task id（用于把 done/error 归到对应条目）
+    private var batchTaskId: String = ""
+    /// 批量「取消」后引擎会回一个取消错误，这里吞掉，避免弹红条
+    private var suppressBatchCancelError = false
 
     @AppStorage("out_dir") var outDir: String = AppPaths.defaultDownloadDirectory.path
     @AppStorage("name_template") var nameTemplate: String = "{author}-{title}"
@@ -217,6 +222,156 @@ final class AppState: ObservableObject {
         ])
         lastTaskId = id
         currentTask = DownloadTaskState(id: id)
+    }
+
+    // MARK: - 多链接批量
+
+    /// 输入框入口：1 条链接保持原逻辑；≥2 条进入多链接批量
+    func downloadFromInput() {
+        let links = LinkParser.allLinks(in: urlText, limit: 500)
+        if links.count >= 2 {
+            startLinkBatch(links)
+        } else {
+            download()
+        }
+    }
+
+    func startLinkBatch(_ urls: [String]) {
+        if let running = batch, !running.finished {
+            errorMessage = "批量任务进行中，请先完成或取消"
+            return
+        }
+        guard environmentInstalled else {
+            errorMessage = "解析引擎尚未安装，请先完成初始化。"
+            return
+        }
+        guard !urls.isEmpty else { return }
+        if currentTask?.isRunning == true { cancelCurrentTask() }
+        startBridgeIfNeeded()
+        let capped = Array(urls.prefix(50))
+        let items = capped.map { url -> BatchLinkItemState in
+            let platform = LinkParser.platformLabel(for: url)
+            if LinkParser.isHomepage(url) {
+                return BatchLinkItemState(
+                    url: url,
+                    platform: platform,
+                    status: .skipped,
+                    message: "主页链接请单独使用「批量下载」"
+                )
+            }
+            return BatchLinkItemState(url: url, platform: platform)
+        }
+        batch = BatchDownloadState(id: "batch-\(Int(Date().timeIntervalSince1970))", items: items)
+        if urls.count > capped.count {
+            noticeMessage = "单次最多处理 50 条链接，已截取前 50 条"
+        }
+        urlText = ""
+        startNextBatchItem()
+    }
+
+    private func startNextBatchItem() {
+        guard var state = batch else { return }
+        if state.finished { return }
+        guard let index = state.items.firstIndex(where: { $0.status == .waiting }) else {
+            state.finished = state.items.allSatisfy { $0.status.isTerminal }
+            batch = state
+            return
+        }
+        state.activeIndex = index
+        state.items[index].status = .parsing
+        batch = state
+        let id = bridge.send([
+            "cmd": "download",
+            "url": state.items[index].url,
+            "out_dir": outDir,
+            "name_template": nameTemplate,
+            "browser_engine": browserEngine,
+            "proxy": proxy,
+        ])
+        batchTaskId = id
+        lastTaskId = id
+        currentTask = DownloadTaskState(id: id)
+    }
+
+    /// 把当前条目的结果写回批量状态，并继续下一条
+    private func finishBatchItem(
+        _ eventId: String?,
+        status: BatchItemStatus,
+        message: String = "",
+        files: [String] = [],
+        title: String = "",
+        mediaInfo: String = ""
+    ) {
+        guard var state = batch, let eventId, !batchTaskId.isEmpty, eventId == batchTaskId else { return }
+        let index = state.activeIndex
+        if index >= 0, index < state.items.count, !state.items[index].status.isTerminal {
+            state.items[index].status = status
+            state.items[index].message = message
+            if !files.isEmpty { state.items[index].files = files }
+            if !title.isEmpty { state.items[index].title = title }
+            if !mediaInfo.isEmpty { state.items[index].mediaInfo = mediaInfo }
+        }
+        state.finished = state.items.allSatisfy { $0.status.isTerminal }
+        batch = state
+        batchTaskId = ""
+        startNextBatchItem()
+    }
+
+    func cancelBatch() {
+        guard let state = batch else { return }
+        if state.finished {
+            batch = nil
+            return
+        }
+        if !batchTaskId.isEmpty {
+            bridge.send(["cmd": "cancel", "task_id": batchTaskId])
+            batchTaskId = ""
+            suppressBatchCancelError = true
+        }
+        var items: [BatchLinkItemState] = []
+        for item in state.items {
+            if item.status.isTerminal {
+                items.append(item)
+                continue
+            }
+            var copy = item
+            copy.status = .cancelled
+            copy.message = "已取消"
+            items.append(copy)
+        }
+        batch = BatchDownloadState(id: state.id, items: items, activeIndex: -1, finished: true)
+    }
+
+    func closeBatch() {
+        batch = nil
+    }
+
+    /// 删除批量卡片里的单个文件：同步删除历史记录里的对应文件
+    func deleteBatchFile(_ file: String) {
+        if let index = historyIndexForFile(file) {
+            deleteHistoryFile(at: index, file: file)
+        } else if FileManager.default.fileExists(atPath: file) {
+            try? FileManager.default.removeItem(atPath: file)
+        }
+        guard var state = batch else { return }
+        var changed = false
+        for i in state.items.indices where state.items[i].files.contains(file) {
+            state.items[i].files.removeAll { $0 == file }
+            changed = true
+        }
+        if changed { batch = state }
+    }
+
+    /// 删除整张批量卡片：所有成功条目的文件与历史记录一并删除，然后收起卡片
+    func deleteBatchAll() {
+        guard let state = batch else { return }
+        for item in state.items {
+            guard let primary = item.files.first else { continue }
+            if let index = historyIndexForFile(primary) {
+                deleteHistoryItem(at: index)
+            }
+        }
+        batch = nil
     }
 
     func refreshCookies() {
@@ -485,6 +640,10 @@ final class AppState: ObservableObject {
         case "done":
             handleDone(event: event)
         case "error":
+            if suppressBatchCancelError, batch != nil {
+                suppressBatchCancelError = false
+                return
+            }
             // 登录窗口里的"登录态已过期"拦截：面板留着，让用户先真正登录再点「完成」
             if (event["code"] as? String) == "LOGIN_EXPIRED", loginSession != nil {
                 loginSession?.busy = false
@@ -497,6 +656,10 @@ final class AppState: ObservableObject {
                 task.stage = "失败"
                 task.message = event["message"] as? String ?? "下载失败"
                 currentTask = task
+                if batch != nil, !batchTaskId.isEmpty {
+                    finishBatchItem(event["id"] as? String, status: .failed, message: task.message)
+                    return
+                }
                 errorMessage = task.message
             } else if let message = event["message"] as? String {
                 errorMessage = message
@@ -653,6 +816,17 @@ final class AppState: ObservableObject {
         loadHistory()
         // 与安卓端一致：下载完成后清空输入框，方便直接粘贴下一条
         urlText = ""
+        // 多链接批量：结果写回批量条目并继续下一条（批量里不逐条弹 Finder）
+        if batch != nil, !batchTaskId.isEmpty {
+            finishBatchItem(
+                event["id"] as? String,
+                status: .success,
+                files: finished.files,
+                title: event["title"] as? String ?? "",
+                mediaInfo: finished.mediaInfo
+            )
+            return
+        }
         if autoOpenFinder, let file = finished.file {
             NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: file)])
         }

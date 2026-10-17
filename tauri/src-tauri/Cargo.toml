@@ -1,6 +1,6 @@
 [package]
 name = "video-grabber"
-version = "1.9.0"
+version = "1.10.0"
 description = "视频下载器（Tauri 外壳，复用 Python 引擎）"
 edition = "2021"
 

@@ -161,3 +161,101 @@ struct HistoryItem: Identifiable, Equatable {
         }
     }
 }
+
+// MARK: - 多链接批量
+
+/// 多链接批量：链接识别规则（与安卓 / Windows 端保持一致）
+enum LinkParser {
+    private static let pattern = #"https?://[^\s\u4e00-\u9fff，。！？；：、“”‘’《》【】（）()"'<>\\^`{|}]+"#
+    private static let trailing = CharacterSet(charactersIn: ".,，。；;!！?？、)）】》>\"'")
+
+    static func allLinks(in text: String, limit: Int = 50) -> [String] {
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
+        let ns = text as NSString
+        var seen = Set<String>()
+        var result: [String] = []
+        for match in regex.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
+            var url = ns.substring(with: match.range)
+            while let last = url.unicodeScalars.last, trailing.contains(last) {
+                url.removeLast()
+            }
+            guard !url.isEmpty, !seen.contains(url) else { continue }
+            seen.insert(url)
+            result.append(url)
+            if result.count >= limit { break }
+        }
+        return result
+    }
+
+    /// 主页 / 收藏页链接：多链接批量里跳过（提示单独用「批量下载」）
+    static func isHomepage(_ url: String) -> Bool {
+        let lower = url.lowercased()
+        return lower.contains("douyin.com/user/") || lower.contains("xiaohongshu.com/user/profile/")
+    }
+
+    static func platformLabel(for url: String) -> String {
+        let lower = url.lowercased()
+        let rules: [(String, String)] = [
+            ("douyin.com", "抖音"), ("iesdouyin.com", "抖音"),
+            ("kuaishou.com", "快手"), ("kuaishou.cn", "快手"),
+            ("xhslink", "小红书"), ("xiaohongshu.com", "小红书"), ("rednote.com", "小红书"),
+            ("weixin.qq.com", "微信视频号"),
+            ("bilibili.com", "B 站"), ("b23.tv", "B 站"), ("bili2233.cn", "B 站"),
+            ("weibo.com", "微博"), ("weibo.cn", "微博"),
+            ("tiktok.com", "TikTok"), ("instagram.com", "Instagram"),
+            ("x.com", "X"), ("twitter.com", "X"), ("t.co", "X"),
+            ("youtube.com", "YouTube"), ("youtu.be", "YouTube"),
+            ("ixigua.com", "西瓜视频"), ("reddit.com", "Reddit"), ("redd.it", "Reddit"),
+            ("vimeo.com", "Vimeo"), ("twitch.tv", "Twitch"),
+            ("music.163.com", "网易云音乐"), ("y.qq.com", "QQ 音乐"),
+        ]
+        for (host, label) in rules where lower.contains(host) { return label }
+        return "直链 / 网页"
+    }
+}
+
+enum BatchItemStatus: String {
+    case waiting, parsing, queued, downloading, success, failed, skipped, cancelled
+
+    var isTerminal: Bool {
+        self == .success || self == .failed || self == .skipped || self == .cancelled
+    }
+
+    var label: String {
+        switch self {
+        case .waiting: return "等待"
+        case .parsing: return "解析中…"
+        case .queued: return "等待下载"
+        case .downloading: return "下载中"
+        case .success: return "成功"
+        case .failed: return "失败"
+        case .skipped: return "已跳过"
+        case .cancelled: return "已取消"
+        }
+    }
+}
+
+struct BatchLinkItemState: Identifiable, Equatable {
+    let id = UUID()
+    let url: String
+    let platform: String
+    var title: String = ""
+    var status: BatchItemStatus = .waiting
+    var message: String = ""
+    var files: [String] = []
+    var mediaInfo: String = ""
+}
+
+struct BatchDownloadState: Equatable {
+    let id: String
+    var items: [BatchLinkItemState]
+    var activeIndex: Int = -1
+    var finished: Bool = false
+
+    var succeeded: Int { items.filter { $0.status == .success }.count }
+    var failed: Int { items.filter { $0.status == .failed }.count }
+    var cancelled: Int { items.filter { $0.status == .cancelled }.count }
+    var skipped: Int { items.filter { $0.status == .skipped }.count }
+    var doneCount: Int { items.filter { $0.status.isTerminal }.count }
+    var percent: Double { items.isEmpty ? 0 : Double(doneCount) / Double(items.count) }
+}

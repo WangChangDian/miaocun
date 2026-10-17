@@ -237,7 +237,7 @@
   <div id="homeView">
   <div class="card">
     <h2>作品链接 / 分享文本</h2>
-    <textarea id="input" placeholder="粘贴作品链接、分享文本，或 mp4 等文件直链…"></textarea>
+    <textarea id="input" placeholder="粘贴作品链接、分享文本（可一次多条），或 mp4 等文件直链…"></textarea>
     <div class="row">
       <button id="pasteBtn">粘贴</button>
       <button class="primary" id="downloadBtn">下载</button>
@@ -245,10 +245,11 @@
       <button id="batchBtn" title="主页 / 收藏夹链接：抓取最近 20 条作品并逐条下载">批量下载</button>
       <button id="folderBtn">打开下载目录</button>
     </div>
-    <div class="muted" style="margin-top:8px">
-      「批量下载」用于<b>主页 / 收藏夹</b>链接（抖音、小红书）：粘贴主页链接后点它，会列出该主页最近的作品让你勾选，
-      再逐条下载（需要先在「设置 → 登录态管理」里登录对应平台）。
+    <div class="muted" style="margin-top:8px;line-height:1.6">
+      可一次粘贴多条链接：换行 / 逗号 / 分号分隔均可，自动去重、自动识别平台，单次最多 50 条。
+      主页 / 收藏页链接请用「批量下载」；部分平台需先在「设置 → 登录态管理」登录。
     </div>
+    <div class="muted" id="linkPreview" style="margin-top:4px"></div>
   </div>
 
   <div class="card" id="taskCard" style="display:none">
@@ -265,6 +266,20 @@
       <button class="icon-btn" id="taskRevealBtn" title="在资源管理器中显示" aria-label="在资源管理器中显示"></button>
       <button class="icon-btn danger" id="taskDeleteBtn" title="删除这次下载及其文件" aria-label="删除这次下载及其文件"></button>
     </div>
+  </div>
+
+  <div class="card" id="batchCard" style="display:none">
+    <h2 id="batchTitle">批量下载</h2>
+    <div class="muted" id="batchStage">准备中</div>
+    <div class="progress"><div id="batchBar"></div></div>
+    <div class="row" id="batchSummary" style="gap:14px;margin-top:6px"></div>
+    <div class="row" style="gap:8px;margin-top:4px">
+      <button id="batchExpandBtn" style="display:none">展开全部</button>
+      <button id="batchShareBtn" style="display:none">分享全部</button>
+      <button id="batchDeleteAllBtn" style="display:none">删除全部</button>
+      <button id="batchCancelBtn">取消</button>
+    </div>
+    <div id="batchItems"></div>
   </div>
 
   <div class="card">
@@ -1215,6 +1230,357 @@
       $('taskDetail').textContent = detail || '';
     }
 
+    // ---------------- 多链接批量 ----------------
+    const LINK_RE = /https?:\/\/[^\s\u4e00-\u9fff，。！？；：、“”‘’《》【】（）()"'<>\\^`{|}]+/g;
+    const LINK_TRAILING = '.,，。；;!！?？、)）】》>"\'';
+
+    function extractAllLinks(text, limit = 500) {
+      const out = [];
+      const seen = new Set();
+      const matches = String(text || '').match(LINK_RE) || [];
+      for (const raw of matches) {
+        let url = raw;
+        while (url && LINK_TRAILING.includes(url[url.length - 1])) url = url.slice(0, -1);
+        if (!url || seen.has(url)) continue;
+        seen.add(url);
+        out.push(url);
+        if (out.length >= limit) break;
+      }
+      return out;
+    }
+
+    function isHomepageLink(url) {
+      const lower = url.toLowerCase();
+      return lower.includes('douyin.com/user/') || lower.includes('xiaohongshu.com/user/profile/');
+    }
+
+    function platformLabelFor(url) {
+      const lower = url.toLowerCase();
+      const rules = [
+        ['douyin.com', '抖音'], ['iesdouyin.com', '抖音'],
+        ['kuaishou.com', '快手'], ['kuaishou.cn', '快手'],
+        ['xhslink', '小红书'], ['xiaohongshu.com', '小红书'], ['rednote.com', '小红书'],
+        ['weixin.qq.com', '微信视频号'],
+        ['bilibili.com', 'B 站'], ['b23.tv', 'B 站'], ['bili2233.cn', 'B 站'],
+        ['weibo.com', '微博'], ['weibo.cn', '微博'],
+        ['tiktok.com', 'TikTok'], ['instagram.com', 'Instagram'],
+        ['x.com', 'X'], ['twitter.com', 'X'], ['t.co', 'X'],
+        ['youtube.com', 'YouTube'], ['youtu.be', 'YouTube'],
+        ['ixigua.com', '西瓜视频'], ['reddit.com', 'Reddit'], ['redd.it', 'Reddit'],
+        ['vimeo.com', 'Vimeo'], ['twitch.tv', 'Twitch'],
+        ['music.163.com', '网易云音乐'], ['y.qq.com', 'QQ 音乐'],
+      ];
+      for (const [host, label] of rules) if (lower.includes(host)) return label;
+      return '直链 / 网页';
+    }
+
+    let batchState = null;
+    let batchTaskId = '';
+    let cancelTaskId = '';
+
+    function isBatchTerminal(status) {
+      return ['success', 'failed', 'skipped', 'cancelled'].includes(status);
+    }
+
+    function refreshLinkPreview() {
+      const links = extractAllLinks($('input').value);
+      const button = $('downloadBtn');
+      const preview = $('linkPreview');
+      if (links.length >= 2) {
+        button.textContent = `下载 ${links.length} 条`;
+        const counts = {};
+        links.forEach((url) => {
+          const label = platformLabelFor(url);
+          counts[label] = (counts[label] || 0) + 1;
+        });
+        preview.textContent = `已识别 ${links.length} 条：` +
+          Object.entries(counts).map(([name, count]) => `${name} ${count}`).join(' · ');
+        preview.style.color = 'var(--primary)';
+      } else {
+        button.textContent = '下载';
+        preview.textContent = '';
+        preview.style.color = '';
+      }
+    }
+
+    function startLinkBatch(links) {
+      if (batchState && !batchState.finished) return;
+      const capped = links.slice(0, 50);
+      batchState = {
+        items: capped.map((url) => ({
+          url,
+          platform: platformLabelFor(url),
+          title: '',
+          status: isHomepageLink(url) ? 'skipped' : 'waiting',
+          message: isHomepageLink(url) ? '主页链接请单独使用「批量下载」' : '',
+          files: [],
+          percent: 0,
+        })),
+        activeIndex: -1,
+        finished: false,
+        expanded: new Set(),
+        expandedAll: false,
+      };
+      if (links.length > capped.length) alert('单次最多处理 50 条链接，已截取前 50 条');
+      $('input').value = '';
+      refreshLinkPreview();
+      $('taskCard').style.display = 'none';
+      renderBatch();
+      startNextBatchItem();
+    }
+
+    function startNextBatchItem() {
+      if (!batchState || batchState.finished) return;
+      const index = batchState.items.findIndex((item) => item.status === 'waiting');
+      if (index < 0) {
+        batchState.finished = batchState.items.every((item) => isBatchTerminal(item.status));
+        renderBatch();
+        return;
+      }
+      batchState.activeIndex = index;
+      batchState.items[index].status = 'parsing';
+      renderBatch();
+      batchTaskId = `b${Date.now()}-${index}`;
+      currentTaskId = batchTaskId;
+      invoke('engine_send', {
+        payload: { id: batchTaskId, cmd: 'download', url: batchState.items[index].url },
+      }).catch((error) => finishBatchItem('failed', String(error)));
+    }
+
+    function finishBatchItem(status, message) {
+      if (!batchState) return;
+      const index = batchState.activeIndex;
+      if (index >= 0 && index < batchState.items.length && !isBatchTerminal(batchState.items[index].status)) {
+        batchState.items[index].status = status;
+        batchState.items[index].message = message || '';
+      }
+      batchState.finished = batchState.items.every((item) => isBatchTerminal(item.status));
+      batchState.activeIndex = -1;
+      batchTaskId = '';
+      renderBatch();
+      refreshHistory();
+      startNextBatchItem();
+    }
+
+    function cancelBatch() {
+      if (!batchState) return;
+      if (batchState.finished) {
+        batchState = null;
+        $('batchCard').style.display = 'none';
+        return;
+      }
+      if (batchTaskId) {
+        cancelTaskId = batchTaskId;
+        invoke('engine_send', { payload: { id: batchTaskId, cmd: 'cancel', task_id: batchTaskId } }).catch(() => {});
+        batchTaskId = '';
+      }
+      batchState.items.forEach((item) => {
+        if (!isBatchTerminal(item.status)) {
+          item.status = 'cancelled';
+          item.message = '已取消';
+        }
+      });
+      batchState.finished = true;
+      batchState.activeIndex = -1;
+      renderBatch();
+    }
+
+    async function deleteBatchFile(file) {
+      const index = await findHistoryIndexForFile(file);
+      if (index >= 0) {
+        try {
+          await invoke('delete_history_file', { index, path: file });
+        } catch (error) {
+          window.alert('删除失败：' + error);
+        }
+      }
+      if (batchState) {
+        batchState.items.forEach((item) => {
+          item.files = (item.files || []).filter((entry) => entry !== file);
+        });
+        renderBatch();
+      }
+      refreshHistory();
+    }
+
+    function copyText(text) {
+      const task = navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject(new Error('no clipboard'));
+      task.catch(() => window.alert('复制失败，请手动复制链接：\n' + text));
+    }
+
+    function batchStatusText(item) {
+      let base;
+      switch (item.status) {
+        case 'waiting': base = '等待'; break;
+        case 'parsing': base = '解析中…'; break;
+        case 'queued': base = '等待下载'; break;
+        case 'downloading': base = item.percent ? `下载中 ${item.percent}%` : '下载中…'; break;
+        case 'success': base = '成功'; break;
+        case 'failed': base = `失败：${item.message || '未知错误'}`; break;
+        case 'skipped': base = item.message || '已跳过'; break;
+        case 'cancelled': base = '已取消'; break;
+        default: base = item.status;
+      }
+      const lower = (item.message || '').toLowerCase();
+      const needsLogin = item.status === 'failed' && (lower.includes('cookie') || (item.message || '').includes('登录'));
+      return needsLogin ? base + ' · 请到 设置 → 登录态管理 登录后重试' : base;
+    }
+
+    async function renderBatch() {
+      if (!batchState) {
+        $('batchCard').style.display = 'none';
+        return;
+      }
+      $('batchCard').style.display = 'block';
+      $('taskCard').style.display = 'none';
+      const items = batchState.items;
+      const counts = { success: 0, failed: 0, cancelled: 0, skipped: 0 };
+      items.forEach((item) => {
+        if (counts[item.status] !== undefined) counts[item.status] += 1;
+      });
+      const doneCount = items.filter((item) => isBatchTerminal(item.status)).length;
+      const activePercent = batchState.activeIndex >= 0 ? (items[batchState.activeIndex].percent || 0) / 100 : 0;
+      const percent = Math.min(100, Math.round((doneCount + activePercent) / Math.max(1, items.length) * 100));
+      $('batchTitle').textContent = `批量下载 · 共 ${items.length} 条`;
+      $('batchStage').textContent = batchState.finished ? '已完成' : '进行中';
+      $('batchBar').style.width = percent + '%';
+      const summary = $('batchSummary');
+      summary.innerHTML = '';
+      const parts = [[`成功 ${counts.success}`, 'var(--primary)']];
+      if (counts.failed) parts.push([`失败 ${counts.failed}`, '#c0392b']);
+      if (counts.cancelled) parts.push([`已取消 ${counts.cancelled}`, 'var(--muted)']);
+      if (counts.skipped) parts.push([`已跳过 ${counts.skipped}`, 'var(--muted)']);
+      parts.forEach(([text, color]) => {
+        const span = document.createElement('span');
+        span.textContent = text;
+        span.style.color = color;
+        span.style.fontSize = '12px';
+        summary.appendChild(span);
+      });
+      $('batchExpandBtn').style.display =
+        items.some((item) => item.status === 'success' && item.files.length) ? 'inline-block' : 'none';
+      $('batchExpandBtn').textContent = batchState.expandedAll ? '收起全部' : '展开全部';
+      const allFiles = items.flatMap((item) => item.files || []).filter(Boolean);
+      $('batchShareBtn').style.display = batchState.finished && allFiles.length ? 'inline-block' : 'none';
+      $('batchDeleteAllBtn').style.display = batchState.finished && allFiles.length ? 'inline-block' : 'none';
+      $('batchCancelBtn').textContent = batchState.finished ? '关闭' : '取消';
+      const container = $('batchItems');
+      container.innerHTML = '';
+      items.forEach((item, index) => {
+        const row = document.createElement('div');
+        row.style.padding = '6px 0';
+        row.style.borderTop = index === 0 ? 'none' : '1px solid var(--line)';
+        const head = document.createElement('div');
+        head.style.display = 'flex';
+        head.style.alignItems = 'center';
+        head.style.gap = '8px';
+        const chip = document.createElement('span');
+        chip.textContent = item.platform;
+        chip.style.fontSize = '11px';
+        chip.style.padding = '2px 6px';
+        chip.style.borderRadius = '10px';
+        chip.style.background = 'var(--primary-soft)';
+        chip.style.color = 'var(--primary)';
+        chip.style.flex = '0 0 auto';
+        head.appendChild(chip);
+        const text = document.createElement('div');
+        text.style.flex = '1';
+        text.style.minWidth = '0';
+        const name = document.createElement('div');
+        name.textContent = item.title || item.url.slice(-46);
+        name.style.fontSize = '12px';
+        name.style.overflow = 'hidden';
+        name.style.textOverflow = 'ellipsis';
+        name.style.whiteSpace = 'nowrap';
+        const status = document.createElement('div');
+        status.textContent = batchStatusText(item);
+        status.style.fontSize = '11px';
+        status.style.color = item.status === 'failed'
+          ? '#c0392b'
+          : (item.status === 'success' ? 'var(--primary)' : 'var(--muted)');
+        text.appendChild(name);
+        text.appendChild(status);
+        head.appendChild(text);
+        if (item.status === 'success' && item.files.length) {
+          const count = document.createElement('span');
+          count.textContent = `${item.files.length} 个文件`;
+          count.style.fontSize = '10px';
+          count.style.color = 'var(--muted)';
+          head.appendChild(count);
+        }
+        if (item.status === 'failed') {
+          const copy = document.createElement('button');
+          copy.textContent = '复制';
+          copy.style.fontSize = '11px';
+          copy.style.padding = '2px 8px';
+          copy.addEventListener('click', () => copyText(item.url));
+          head.appendChild(copy);
+        }
+        if (item.files.length) {
+          const expandedNow = batchState.expandedAll || batchState.expanded.has(index);
+          const toggle = document.createElement('button');
+          toggle.className = 'icon-btn';
+          toggle.textContent = expandedNow ? '▴' : '▾';
+          toggle.title = '展开 / 收起文件';
+          toggle.addEventListener('click', () => {
+            if (batchState.expanded.has(index)) batchState.expanded.delete(index);
+            else batchState.expanded.add(index);
+            batchState.expandedAll = false;
+            renderBatch();
+          });
+          head.appendChild(toggle);
+        }
+        row.appendChild(head);
+        if ((batchState.expandedAll || batchState.expanded.has(index)) && item.files.length) {
+          const filesBox = document.createElement('div');
+          filesBox.style.marginTop = '6px';
+          row.appendChild(filesBox);
+          (async () => {
+            try {
+              const sizes = await invoke('file_sizes', { paths: item.files });
+              item.files.forEach((path, i) => fileSizes.set(path, sizes[i] || 0));
+            } catch (_) { /* 取不到大小不影响预览 */ }
+            const previewable = item.files.filter((file) => mediaKind(file) !== 'other');
+            const others = item.files.filter((file) => mediaKind(file) === 'other');
+            if (previewable.length) filesBox.appendChild(buildStrip(previewable, deleteBatchFile));
+            others.forEach((file) => filesBox.appendChild(buildFileRow(file, deleteBatchFile)));
+          })();
+        }
+        container.appendChild(row);
+      });
+    }
+
+    $('batchCancelBtn').addEventListener('click', () => cancelBatch());
+    $('batchExpandBtn').addEventListener('click', () => {
+      if (!batchState) return;
+      batchState.expandedAll = !batchState.expandedAll;
+      if (!batchState.expandedAll) batchState.expanded.clear();
+      renderBatch();
+    });
+    $('batchShareBtn').addEventListener('click', () => {
+      if (!batchState) return;
+      const files = batchState.items.flatMap((item) => item.files || []).filter(Boolean);
+      if (!files.length) return;
+      invoke('share_files', { paths: files }).catch((error) => window.alert('分享失败：' + error));
+    });
+    $('batchDeleteAllBtn').addEventListener('click', async () => {
+      if (!batchState) return;
+      for (const item of batchState.items) {
+        const primary = (item.files || [])[0];
+        if (!primary) continue;
+        const index = await findHistoryIndexForFile(primary);
+        if (index >= 0) {
+          try {
+            await invoke('delete_history_item', { index, deleteFiles: true });
+          } catch (_) { /* 已删除或记录不存在时忽略 */ }
+        }
+      }
+      batchState = null;
+      $('batchCard').style.display = 'none';
+      refreshHistory();
+    });
+    $('input').addEventListener('input', refreshLinkPreview);
+
     // listen() 是异步的：必须等它注册完成再发第一波请求，否则引擎的 engine_status /
     // cookie_status 会「发得太早」，设置回填和 Cookie 列表就一直是空的（Windows 上实测踩到）
     const bridgeReady = listen('bridge-event', (event) => {
@@ -1322,6 +1688,38 @@
       }
       if (payload.kind === 'cloud_register') return;
       if (id !== currentTaskId && payload.event !== 'done') return;
+      if (payload.event === 'error' && cancelTaskId && id === cancelTaskId) {
+        cancelTaskId = '';
+        return;
+      }
+      if (batchState && id === batchTaskId) {
+        if (payload.event === 'done') {
+          const item = batchState.items[batchState.activeIndex];
+          if (item) {
+            item.status = 'success';
+            item.title = payload.title || '';
+            item.files = payload.files || [];
+            item.percent = 100;
+          }
+          batchState.finished = batchState.items.every((entry) => isBatchTerminal(entry.status));
+          batchState.activeIndex = -1;
+          batchTaskId = '';
+          renderBatch();
+          refreshHistory();
+          startNextBatchItem();
+          return;
+        }
+        if (payload.event === 'error') {
+          finishBatchItem('failed', payload.message || '下载失败');
+          return;
+        }
+        if (payload.event === 'progress') {
+          const item = batchState.items[batchState.activeIndex];
+          if (item) item.percent = Math.round(payload.percent || 0);
+          renderBatch();
+        }
+        return;
+      }
       switch (payload.event) {
         case 'meta':
           showTask('解析中', payload.label, 0);
@@ -1338,6 +1736,7 @@
           break;
         }
         case 'done':
+          if (batchState && !batchState.finished) return;
           showTask('已完成', null, 100, payload.title || '');
           currentFile = payload.file || (payload.files && payload.files[0]) || '';
           $('taskActions').style.display = currentFile ? 'flex' : 'none';
@@ -1347,6 +1746,7 @@
           if (id === currentTaskId) $('input').value = '';
           break;
         case 'error':
+          if (batchState && !batchState.finished) return;
           if (id === 'account-login' || id === 'sms-code') {
             $('accountHint').textContent = payload.message || '操作失败';
           } else if (id === 'feedback') {
@@ -1381,6 +1781,11 @@
     $('downloadBtn').addEventListener('click', async () => {
       const text = $('input').value.trim();
       if (!text) return;
+      const links = extractAllLinks(text);
+      if (links.length >= 2) {
+        startLinkBatch(links);
+        return;
+      }
       currentTaskId = `t${Date.now()}`;
       showTask('解析中…', null, 0);
       await invoke('engine_send', { payload: { id: currentTaskId, cmd: 'download', url: text } });

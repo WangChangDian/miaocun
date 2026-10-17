@@ -21,7 +21,9 @@ struct MainView: View {
                         .transition(.opacity)
                 } else {
                     inputSection
-                    if let task = state.currentTask {
+                    if let batch = state.batch {
+                        BatchCard(batch: batch)
+                    } else if let task = state.currentTask {
                         TaskCard(task: task)
                     }
                     historySection
@@ -98,7 +100,8 @@ struct MainView: View {
     }
 
     private var inputSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        let detectedLinks = LinkParser.allLinks(in: state.urlText)
+        return VStack(alignment: .leading, spacing: 8) {
             Text("作品链接或分享文本")
                 .font(.subheadline.weight(.medium))
             TextEditor(text: $state.urlText)
@@ -111,6 +114,21 @@ struct MainView: View {
                     RoundedRectangle(cornerRadius: 8)
                         .stroke(Color.secondary.opacity(0.25))
                 )
+            Text("可一次粘贴多条链接：换行 / 逗号 / 分号分隔均可，自动去重、自动识别平台。")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            Text("主页 / 收藏页链接请用「批量下载」；部分平台需先在 设置 → Cookie 管理 登录。单次最多 50 条。")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            if detectedLinks.count >= 2 {
+                let summary = Dictionary(grouping: detectedLinks, by: { LinkParser.platformLabel(for: $0) })
+                    .map { "\($0.key) \($0.value.count)" }
+                    .sorted()
+                    .joined(separator: " · ")
+                Text("已识别 \(detectedLinks.count) 条：\(summary)")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(state.palette.primary)
+            }
             HStack {
                 Button {
                     state.pasteFromClipboard()
@@ -118,9 +136,12 @@ struct MainView: View {
                     Label("粘贴", systemImage: "doc.on.clipboard")
                 }
                 Button {
-                    state.download()
+                    state.downloadFromInput()
                 } label: {
-                    Label("下载", systemImage: "arrow.down.to.line")
+                    Label(
+                        detectedLinks.count >= 2 ? "下载 \(detectedLinks.count) 条" : "下载",
+                        systemImage: "arrow.down.to.line"
+                    )
                 }
                 .keyboardShortcut(.return, modifiers: [.command])
                 .buttonStyle(ThemeGradientButtonStyle(
@@ -139,7 +160,7 @@ struct MainView: View {
                 .help("主页 / 收藏夹链接：抓取该主页最近的 20 条作品并逐条下载（需先在「设置 → Cookie 管理」登录对应平台）")
                 .disabled(state.urlText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
 
-                if state.currentTask?.isRunning == true {
+                if state.currentTask?.isRunning == true && state.batch == nil {
                     Button(role: .destructive) {
                         state.cancelCurrentTask()
                     } label: {
@@ -265,6 +286,189 @@ private func cardIconButton(
     }
     .buttonStyle(.borderless)
     .help(help)
+}
+
+/// 多链接批量卡片：汇总 + 按链接分组（默认折叠），组内复用文件缩略图
+struct BatchCard: View {
+    let batch: BatchDownloadState
+    @EnvironmentObject private var state: AppState
+    @State private var expanded: Set<UUID> = []
+    @State private var preview: PreviewRequest?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("批量下载").font(.headline)
+                Text("共 \(batch.items.count) 条").font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                if batch.finished {
+                    if !allFiles.isEmpty {
+                        cardIconButton("square.and.arrow.up", help: "分享全部文件") {
+                            state.share(files: allFiles)
+                        }
+                        cardIconButton("trash", help: "删除这批下载及其文件", tint: .red) {
+                            state.deleteBatchAll()
+                        }
+                    }
+                    Button("关闭") { state.closeBatch() }.font(.caption)
+                } else {
+                    Button(role: .destructive) { state.cancelBatch() } label: {
+                        Text("取消")
+                    }
+                    .font(.caption)
+                }
+            }
+            ProgressView(value: overallProgress).tint(state.palette.primary)
+            HStack(spacing: 12) {
+                Text("成功 \(batch.succeeded)")
+                    .font(.caption).foregroundStyle(.green)
+                if batch.failed > 0 {
+                    Text("失败 \(batch.failed)").font(.caption).foregroundStyle(.red)
+                }
+                if batch.cancelled > 0 {
+                    Text("已取消 \(batch.cancelled)").font(.caption).foregroundStyle(.secondary)
+                }
+                if batch.skipped > 0 {
+                    Text("已跳过 \(batch.skipped)").font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+                if batch.items.contains(where: { $0.status == .success && !$0.files.isEmpty }) {
+                    Button(expanded.count >= batch.items.count ? "收起全部" : "展开全部") {
+                        if expanded.count >= batch.items.count {
+                            expanded.removeAll()
+                        } else {
+                            expanded = Set(batch.items.map { $0.id })
+                        }
+                    }
+                    .font(.caption)
+                }
+            }
+            ForEach(Array(batch.items.enumerated()), id: \.element.id) { _, item in
+                row(item)
+            }
+        }
+        .padding(12)
+        .background(Color(nsColor: .controlBackgroundColor))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Color.secondary.opacity(0.15))
+        )
+        .shadow(color: .black.opacity(0.06), radius: 5, y: 2)
+        .sheet(item: $preview) { request in
+            MediaPreviewSheet(files: request.files, index: request.index)
+        }
+    }
+
+    private var overallProgress: Double {
+        let activeStatus = batch.items.indices.contains(batch.activeIndex)
+            ? batch.items[batch.activeIndex].status
+            : nil
+        let current = activeStatus == .downloading ? (state.currentTask?.percent ?? 0) / 100 : 0
+        return min(1, (Double(batch.doneCount) + current) / Double(max(1, batch.items.count)))
+    }
+
+    private var allFiles: [String] {
+        batch.items.flatMap { $0.files }.filter { !$0.isEmpty }
+    }
+
+    @ViewBuilder
+    private func row(_ item: BatchLinkItemState) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Text(item.platform)
+                    .font(.caption2.weight(.semibold))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.accentColor.opacity(0.15))
+                    .clipShape(Capsule())
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(item.title.isEmpty ? String(item.url.suffix(48)) : item.title)
+                        .font(.caption)
+                        .lineLimit(1)
+                    Text(statusText(item))
+                        .font(.caption2)
+                        .foregroundStyle(statusColor(item))
+                        .lineLimit(2)
+                }
+                Spacer()
+                if item.status == .success && !item.files.isEmpty {
+                    Text("\(item.files.count) 个文件")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                if item.status == .failed {
+                    Button("复制") { copyToPasteboard(item.url) }
+                        .font(.caption2)
+                        .buttonStyle(.borderless)
+                }
+                if !item.files.isEmpty {
+                    Button {
+                        if expanded.contains(item.id) { expanded.remove(item.id) }
+                        else { expanded.insert(item.id) }
+                    } label: {
+                        Image(systemName: expanded.contains(item.id) ? "chevron.up" : "chevron.down")
+                            .font(.system(size: 11))
+                    }
+                    .buttonStyle(.borderless)
+                    .help(expanded.contains(item.id) ? "收起" : "展开文件")
+                }
+            }
+            if expanded.contains(item.id) && !item.files.isEmpty {
+                FileThumbStrip(
+                    files: item.files,
+                    onPreview: { fileIndex in
+                        preview = PreviewRequest(files: item.files, index: fileIndex)
+                    },
+                    onShare: { file in state.share(files: [file]) },
+                    onDelete: { file in state.deleteBatchFile(file) }
+                )
+            }
+        }
+        .padding(.vertical, 3)
+    }
+
+    private func statusText(_ item: BatchLinkItemState) -> String {
+        var text: String
+        switch item.status {
+        case .waiting:
+            text = "等待"
+        case .parsing:
+            text = "解析中…"
+        case .queued:
+            text = "等待下载"
+        case .downloading:
+            if let percent = state.currentTask?.percent {
+                text = "下载中 \(Int(percent.rounded()))%"
+            } else {
+                text = "下载中…"
+            }
+        case .success:
+            text = "成功"
+        case .failed:
+            text = "失败：\(item.message.isEmpty ? "未知错误" : item.message)"
+        case .skipped:
+            text = item.message.isEmpty ? "已跳过" : item.message
+        case .cancelled:
+            text = "已取消"
+        }
+        let needsLogin = item.status == .failed &&
+            (item.message.contains("登录") || item.message.lowercased().contains("cookie"))
+        return needsLogin ? text + " · 请到 设置 → Cookie 管理 登录后重试" : text
+    }
+
+    private func statusColor(_ item: BatchLinkItemState) -> Color {
+        switch item.status {
+        case .failed: return .red
+        case .success: return .green
+        default: return .secondary
+        }
+    }
+
+    private func copyToPasteboard(_ text: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+    }
 }
 
 struct TaskCard: View {

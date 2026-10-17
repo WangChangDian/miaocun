@@ -3,6 +3,7 @@ package local.wangchangdian.videograbber
 import android.Manifest
 import android.app.Activity
 import android.app.AlertDialog
+import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
@@ -45,6 +46,8 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Icon
@@ -96,31 +99,54 @@ class MainActivity : ComponentActivity() {
     private val busy = MutableStateFlow(false)
     private val message = MutableStateFlow<String?>(null)
     private val inputText = MutableStateFlow("")
+    /** 多链接批量：驱动状态 */
+    private var batchId: String = ""
+    private var batchIndexInFlight: Int = -1
 
     private val extractionLauncher =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            val batchIndex = batchIndexInFlight
+            batchIndexInFlight = -1
             busy.value = false
+            fun fail(text: String, cancelled: Boolean = false) {
+                if (batchIndex < 0) {
+                    message.value = text
+                    return
+                }
+                val currentStatus = AppState.batch.value?.items?.getOrNull(batchIndex)?.status
+                if (cancelled && currentStatus != null && currentStatus.terminal) {
+                    // 已经有失败原因（例如 yt-dlp 先失败、回退嗅探又被返回键关掉）：保留原因，直接继续
+                    processNextBatchLink()
+                    return
+                }
+                if (cancelled) {
+                    AppState.updateBatchItem(batchIndex, BatchItemStatus.CANCELLED, message = text)
+                    processNextBatchLink()
+                } else {
+                    failBatchItem(batchIndex, text)
+                }
+            }
             if (result.resultCode != Activity.RESULT_OK) {
-                message.value = "解析已取消"
+                fail("解析已取消", cancelled = true)
                 return@registerForActivityResult
             }
             val data = result.data
             val error = data?.getStringExtra(ExtractionActivity.EXTRA_ERROR)
             if (!error.isNullOrBlank()) {
-                message.value = error
+                fail(error)
                 return@registerForActivityResult
             }
             val raw = data?.getStringExtra(ExtractionActivity.EXTRA_RESULT)
             if (raw.isNullOrBlank()) {
-                message.value = "解析失败，请重试"
+                fail("解析失败，请重试")
                 return@registerForActivityResult
             }
             val extracted = ExtractResult.fromJson(raw)
             if (extracted.mediaUrls.isEmpty()) {
-                message.value = "未找到可下载的媒体地址"
+                fail("未找到可下载的媒体地址")
                 return@registerForActivityResult
             }
-            enqueue(extracted)
+            enqueueForBatch(extracted, batchIndex)
         }
 
     private val notificationPermission =
@@ -149,6 +175,7 @@ class MainActivity : ComponentActivity() {
                         busy = busy.collectAsState().value,
                         message = message.collectAsState().value,
                         downloadState = AppState.download.collectAsState().value,
+                        batch = AppState.batch.collectAsState().value,
                         queue = AppState.queue.collectAsState().value,
                         history = AppState.history.collectAsState().value,
                         liveLog = AppState.liveLog.collectAsState().value,
@@ -160,7 +187,7 @@ class MainActivity : ComponentActivity() {
                             val text = clipboard.primaryClip?.getItemAt(0)?.text?.toString().orEmpty()
                             if (text.isNotBlank()) inputText.value = text
                         },
-                        onDownload = { startExtraction(inputText.value) },
+                        onDownload = { startDownloadFlow(inputText.value) },
                         onBatch = { startBatch(inputText.value) },
                         batchable = isBatchUrl(inputText.value),
                         onDownloadFinished = { inputText.value = "" },
@@ -174,6 +201,14 @@ class MainActivity : ComponentActivity() {
                         onDeleteFile = { index, uri -> AppState.deleteHistoryFile(index, uri) },
                         onDeleteCurrent = { AppState.deleteCurrentDownload() },
                         onDeleteCurrentFile = { uri -> AppState.deleteCurrentDownloadFile(uri) },
+                        onCancelBatch = { cancelBatch() },
+                        onCloseBatch = { AppState.clearBatch() },
+                        onCopyLink = { url -> copyLink(url) },
+                        onDeleteAllBatch = { deleteBatchAll() },
+                        onDeleteBatchFile = { uri ->
+                            val index = AppState.historyIndexOfFile(uri)
+                            if (index >= 0) AppState.deleteHistoryFile(index, uri)
+                        },
                     )
                     // 有新版时弹出更新卡片（应用内下载 + 安装）
                     UpdateDialogHost { text -> message.value = text }
@@ -192,17 +227,18 @@ class MainActivity : ComponentActivity() {
         val text = intent.getStringExtra(Intent.EXTRA_TEXT).orEmpty()
         if (text.isBlank()) return
         inputText.value = text
-        if (autoStart) startExtraction(text)
+        if (autoStart) startDownloadFlow(text)
     }
 
-    private fun startExtraction(text: String, resolveShortLink: Boolean = true) {
+    private fun startExtraction(text: String, resolveShortLink: Boolean = true, batchIndex: Int = -1) {
         val batchUrl = UrlUtils.extractUrl(text)
-        if (batchUrl != null && isBatchUrl(batchUrl)) {
+        if (batchIndex < 0 && batchUrl != null && isBatchUrl(batchUrl)) {
             message.value = "这是主页链接：要批量下载请点旁边的「批量」按钮"
         }
         val url = UrlUtils.extractUrl(text)
         if (url.isNullOrBlank()) {
-            message.value = "没有识别到链接，请检查粘贴内容"
+            if (batchIndex >= 0) failBatchItem(batchIndex, "没有识别到链接")
+            else message.value = "没有识别到链接，请检查粘贴内容"
             return
         }
         val platform = UrlUtils.detectPlatform(url)
@@ -210,17 +246,18 @@ class MainActivity : ComponentActivity() {
             // 明确是文件直链 → 直接下载；其余先让内置 yt-dlp 试一次（覆盖它支持的上千个站点），
             // 认不出来再自动回退到「网页资源嗅探」，两条路都不通才报错
             if (UrlUtils.isDirectFile(url)) {
-                enqueue(
+                enqueueForBatch(
                     ExtractResult(
                         platform = Platform.FILE,
                         title = url.substringAfterLast('/').substringBefore('?'),
                         author = "",
                         mediaUrls = listOf(url),
                         kind = ExtractResult.KIND_FILE,
-                    )
+                    ),
+                    batchIndex,
                 )
             } else {
-                startGenericWithFallback(url, text)
+                startGenericWithFallback(url, text, batchIndex)
             }
             return
         }
@@ -238,11 +275,11 @@ class MainActivity : ComponentActivity() {
                 message.value = null
                 if (awemeId != null) {
                     LogStore.log("解析", "抖音短链解析到作品 ID: $awemeId")
-                    startExtraction("https://www.douyin.com/video/$awemeId", resolveShortLink = false)
+                    startExtraction("https://www.douyin.com/video/$awemeId", resolveShortLink = false, batchIndex = batchIndex)
                 } else {
                     // 解析不出 ID 时不要卡住用户：直接按原链接打开（页面里还有 DOM/接口兜底）
                     LogStore.log("解析", "抖音短链没解析出作品 ID，回退直接打开")
-                    startExtraction(url, resolveShortLink = false)
+                    startExtraction(url, resolveShortLink = false, batchIndex = batchIndex)
                 }
             }
             return
@@ -266,21 +303,23 @@ class MainActivity : ComponentActivity() {
                     busy.value = false
                     if (ready) {
                         message.value = null
-                        startExtraction(text)
+                        startExtraction(text, batchIndex = batchIndex)
                     } else {
-                        message.value = "yt-dlp 初始化失败，请在设置页查看运行日志"
+                        if (batchIndex >= 0) failBatchItem(batchIndex, "yt-dlp 初始化失败")
+                        else message.value = "yt-dlp 初始化失败，请在设置页查看运行日志"
                     }
                 }
                 return
             }
-            enqueue(
+            enqueueForBatch(
                 ExtractResult(
                     platform = platform,
                     title = url,
                     author = "",
                     mediaUrls = listOf(url),
                     kind = ExtractResult.KIND_YTDLP,
-                )
+                ),
+                batchIndex,
             )
             return
         }
@@ -297,14 +336,15 @@ class MainActivity : ComponentActivity() {
                 val info = resolved.getOrNull()
                 if (info != null) {
                     LogStore.log("视频号", "解析成功：${info.author} / ${info.title.take(40)}")
-                    enqueue(
+                    enqueueForBatch(
                         ExtractResult(
                             platform = platform,
                             title = info.title.ifBlank { "微信视频号" },
                             author = info.author,
                             mediaUrls = listOf(info.videoUrl),
                             kind = ExtractResult.KIND_VIDEO,
-                        )
+                        ),
+                        batchIndex,
                     )
                 } else {
                     val error = resolved.exceptionOrNull()
@@ -314,7 +354,7 @@ class MainActivity : ComponentActivity() {
                         CookieStore.markExpired(this@MainActivity, "wechat_channels")
                         AppState.refreshLoginStates()
                     }
-                    message.value = text
+                    if (batchIndex >= 0) failBatchItem(batchIndex, text) else message.value = text
                     LogStore.log("视频号", "解析失败：$text")
                 }
             }
@@ -362,10 +402,11 @@ class MainActivity : ComponentActivity() {
                             )
                         }
                     }
-                    enqueue(result)
+                    enqueueForBatch(result, batchIndex)
                 } else {
                     val error = resolved.exceptionOrNull()
-                    message.value = error?.message ?: "Instagram 解析失败"
+                    val text = error?.message ?: "Instagram 解析失败"
+                    if (batchIndex >= 0) failBatchItem(batchIndex, text) else message.value = text
                     LogStore.log("Instagram", "解析失败：${error?.message}")
                 }
             }
@@ -378,6 +419,7 @@ class MainActivity : ComponentActivity() {
             .putExtra(ExtractionActivity.EXTRA_URL, url)
             .putExtra(ExtractionActivity.EXTRA_HINT, text)
             .putExtra(ExtractionActivity.EXTRA_PLATFORM, platform.key)
+        batchIndexInFlight = batchIndex
         extractionLauncher.launch(intent)
     }
 
@@ -415,28 +457,41 @@ class MainActivity : ComponentActivity() {
      * 回退需要界面还在（嗅探要 WebView），所以这里由 Activity 盯着下载状态；
      * 如果用户已经退出界面，就只提示一句，不做回退。
      */
-    private fun startGenericWithFallback(url: String, text: String) {
+    private fun startGenericWithFallback(url: String, text: String, batchIndex: Int = -1) {
         AppState.clearLiveLog()
         LogStore.log("通用解析", "交给 yt-dlp 试一次: ${url.take(80)}")
-        enqueue(
+        enqueueForBatch(
             ExtractResult(
                 platform = Platform.GENERIC,
                 title = url.substringAfterLast('/').substringBefore('?').take(60).ifBlank { url.take(60) },
                 author = "",
                 mediaUrls = listOf(url),
                 kind = ExtractResult.KIND_YTDLP,
-            )
+            ),
+            batchIndex,
         )
         lifecycleScope.launch {
-            val state = withTimeoutOrNull(180_000) {
-                AppState.download.first { current ->
-                    current?.platform == Platform.GENERIC && (current.failed || current.finished)
+            val failed = if (batchIndex >= 0) {
+                val snapshot = withTimeoutOrNull(180_000) {
+                    AppState.batch.first { state ->
+                        val status = state?.items?.getOrNull(batchIndex)?.status
+                        status != null && status.terminal
+                    }
                 }
+                snapshot?.items?.getOrNull(batchIndex)?.status == BatchItemStatus.FAILED
+            } else {
+                val state = withTimeoutOrNull(180_000) {
+                    AppState.download.first { current ->
+                        current?.platform == Platform.GENERIC && (current.failed || current.finished)
+                    }
+                }
+                state?.failed == true
             }
-            if (state?.failed == true) {
+            if (failed) {
                 LogStore.log("通用解析", "yt-dlp 认不出这个链接，回退网页嗅探")
-                message.value = "yt-dlp 认不出这个链接，正在改用网页嗅探…"
+                if (batchIndex < 0) message.value = "yt-dlp 认不出这个链接，正在改用网页嗅探…"
                 busy.value = true
+                batchIndexInFlight = batchIndex
                 extractionLauncher.launch(
                     Intent(this@MainActivity, ExtractionActivity::class.java)
                         .putExtra(ExtractionActivity.EXTRA_URL, url)
@@ -445,6 +500,116 @@ class MainActivity : ComponentActivity() {
                 )
             }
         }
+    }
+
+    // ---------------------------------------------------------------- 多链接批量
+
+    /** 输入框入口：1 条链接保持原逻辑，≥2 条进入多链接批量 */
+    private fun startDownloadFlow(text: String) {
+        val urls = UrlUtils.extractAllUrls(text, limit = 500)
+        if (urls.size >= 2) {
+            startLinkBatch(urls)
+            return
+        }
+        startExtraction(text)
+    }
+
+    private fun startLinkBatch(urls: List<String>) {
+        if (AppState.batch.value?.finished == false) {
+            message.value = "批量任务进行中，请先完成或取消"
+            return
+        }
+        if (busy.value) {
+            message.value = "正在解析中，请稍候再试"
+            return
+        }
+        val capped = urls.take(50)
+        val items = capped.map { url ->
+            if (isBatchUrl(url)) {
+                BatchLinkItem(
+                    url = url,
+                    platform = UrlUtils.detectPlatform(url),
+                    status = BatchItemStatus.SKIPPED,
+                    message = "主页链接请单独使用「批量下载」",
+                )
+            } else {
+                BatchLinkItem(url = url, platform = UrlUtils.detectPlatform(url))
+            }
+        }
+        batchId = "batch-${System.currentTimeMillis()}"
+        batchIndexInFlight = -1
+        AppState.startBatch(batchId, items)
+        LogStore.log("批量", "开始多链接批量：${items.size} 条（原始 ${urls.size} 条）")
+        message.value = if (urls.size > capped.size) {
+            "单次最多处理 50 条链接，已截取前 50 条"
+        } else {
+            null
+        }
+        processNextBatchLink()
+    }
+
+    private fun processNextBatchLink() {
+        val state = AppState.batch.value ?: return
+        if (state.finished) return
+        val index = state.items.indexOfFirst { it.status == BatchItemStatus.WAITING }
+        if (index < 0) {
+            AppState.refreshBatchFinished()
+            return
+        }
+        AppState.setBatchActive(index)
+        AppState.updateBatchItem(index, BatchItemStatus.PARSING)
+        startExtraction(state.items[index].url, batchIndex = index)
+    }
+
+    private fun enqueueForBatch(result: ExtractResult, batchIndex: Int) {
+        if (batchIndex >= 0 && batchId.isNotBlank()) {
+            enqueue(result.copy(batchId = batchId, batchIndex = batchIndex))
+            AppState.updateBatchItem(batchIndex, BatchItemStatus.QUEUED, message = "等待下载")
+            processNextBatchLink()
+        } else {
+            enqueue(result)
+        }
+    }
+
+    private fun failBatchItem(batchIndex: Int, text: String) {
+        if (batchIndex < 0) {
+            message.value = text
+            return
+        }
+        LogStore.log("批量", "第 ${batchIndex + 1} 条失败：$text")
+        AppState.updateBatchItem(batchIndex, BatchItemStatus.FAILED, message = text)
+        processNextBatchLink()
+    }
+
+    private fun cancelBatch() {
+        val state = AppState.batch.value ?: return
+        if (state.finished) {
+            AppState.clearBatch()
+            return
+        }
+        ExtractionActivity.stopCurrent()
+        busy.value = false
+        batchIndexInFlight = -1
+        DownloadService.cancelAll()
+        AppState.cancelRemainingBatchItems()
+        LogStore.log("批量", "用户取消批量任务")
+    }
+
+    private fun copyLink(url: String) {
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("链接", url))
+        message.value = "已复制链接"
+    }
+
+    /** 删除整张批量卡片：所有成功条目的文件与历史记录一并删除，然后收起卡片 */
+    private fun deleteBatchAll() {
+        val state = AppState.batch.value ?: return
+        state.items.forEach { item ->
+            val primary = item.files.firstOrNull() ?: return@forEach
+            val index = AppState.historyIndexOfFile(primary)
+            if (index >= 0) AppState.deleteHistoryItem(index)
+        }
+        AppState.clearBatch()
     }
 
     private fun openHistoryEntry(entry: HistoryEntry) {
@@ -552,6 +717,7 @@ private fun MainScreen(
     busy: Boolean,
     message: String?,
     downloadState: DownloadState?,
+    batch: BatchLinkState?,
     queue: List<QueueItem>,
     history: List<HistoryEntry>,
     liveLog: List<String>,
@@ -571,9 +737,15 @@ private fun MainScreen(
     onDeleteFile: (Int, String) -> Unit,
     onDeleteCurrent: () -> Unit,
     onDeleteCurrentFile: (String) -> Unit,
+    onCancelBatch: () -> Unit,
+    onCloseBatch: () -> Unit,
+    onCopyLink: (String) -> Unit,
+    onDeleteAllBatch: () -> Unit,
+    onDeleteBatchFile: (String) -> Unit,
 ) {
     val context = LocalContext.current
     val gradient = AppThemeColors.gradient(themeKey)
+    val detectedUrls = remember(input) { UrlUtils.extractAllUrls(input) }
     var logExpanded by remember { mutableStateOf(true) }
     val fileSelected = remember { mutableStateMapOf<String, Boolean>() }
     LaunchedEffect(downloadState?.fileUris) {
@@ -585,9 +757,9 @@ private fun MainScreen(
         if (downloadState?.finished == true) onDownloadFinished()
     }
 
-    // 解析中 / 下载中：把运行日志直接显示在主页，下载完成后自动隐藏
+    // 解析中 / 下载中：把运行日志直接显示在主页，下载完成后自动隐藏（批量模式下由批量卡片展示状态）
     val downloading = downloadState != null && !downloadState.finished && !downloadState.failed
-    val showLog = busy || downloading
+    val showLog = (busy || downloading) && batch == null
 
     Scaffold(
         containerColor = Color.Transparent,
@@ -639,13 +811,17 @@ private fun MainScreen(
                             .fillMaxWidth()
                             .height(108.dp),
                         shape = RoundedCornerShape(14.dp),
-                        placeholder = { Text("粘贴作品链接、分享文本，或 mp4 等文件直链…") },
+                        placeholder = { Text("粘贴作品链接、分享文本（可一次多条），或 mp4 等文件直链…") },
                     )
                     Spacer(Modifier.height(12.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         OutlinedButton(onClick = onPaste, shape = RoundedCornerShape(12.dp)) { Text("粘贴") }
                         GradientButton(
-                            text = if (busy) "解析中…" else "下载",
+                            text = when {
+                                busy -> "解析中…"
+                                detectedUrls.size >= 2 -> "下载 ${detectedUrls.size} 条"
+                                else -> "下载"
+                            },
                             enabled = !busy && input.isNotBlank(),
                             gradient = gradient,
                             onClick = onDownload,
@@ -658,6 +834,32 @@ private fun MainScreen(
                                 enabled = !busy,
                             ) { Text("批量") }
                         }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "可一次粘贴多条链接：换行 / 逗号 / 分号分隔均可，自动去重、自动识别平台。",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(
+                        "主页 / 收藏页链接请用「批量下载」；部分平台需先在 设置 → Cookie 管理 登录。单次最多 50 条。",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    if (detectedUrls.size >= 2) {
+                        Spacer(Modifier.height(4.dp))
+                        val summary = detectedUrls
+                            .map { UrlUtils.detectPlatform(it).label }
+                            .groupingBy { it }
+                            .eachCount()
+                            .entries
+                            .joinToString(" · ") { "${it.key} ${it.value}" }
+                        Text(
+                            "已识别 ${detectedUrls.size} 条：$summary",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
                     }
                 }
 
@@ -747,7 +949,21 @@ private fun MainScreen(
                     }
                 }
 
-                downloadState?.let { state ->
+                batch?.let { batchState ->
+                    BatchDownloadCard(
+                        state = batchState,
+                        downloadState = downloadState,
+                        onCancel = onCancelBatch,
+                        onClose = onCloseBatch,
+                        onCopyLink = onCopyLink,
+                        onOpen = onOpenUri,
+                        onShare = onShare,
+                        onDeleteAll = onDeleteAllBatch,
+                        onDeleteFile = onDeleteBatchFile,
+                    )
+                }
+
+                if (batch == null) downloadState?.let { state ->
                     AppCard {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             PlatformChip(state.platform.label)
@@ -835,7 +1051,7 @@ private fun MainScreen(
                     }
                 }
 
-                if (queue.isNotEmpty()) {
+                if (batch == null && queue.isNotEmpty()) {
                     Column {
                         Text("等待队列（${queue.size}）", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                         queue.take(3).forEach { pending ->
@@ -940,6 +1156,205 @@ private fun MainScreen(
             }
         }
     }
+}
+
+/** 多链接批量卡片：汇总 + 按链接分组（默认折叠），组内复用文件缩略图 */
+@Composable
+private fun BatchDownloadCard(
+    state: BatchLinkState,
+    downloadState: DownloadState?,
+    onCancel: () -> Unit,
+    onClose: () -> Unit,
+    onCopyLink: (String) -> Unit,
+    onOpen: (String) -> Unit,
+    onShare: (List<String>) -> Unit,
+    onDeleteAll: () -> Unit,
+    onDeleteFile: (String) -> Unit,
+) {
+    val context = LocalContext.current
+    val expanded = remember(state.id) { mutableStateMapOf<Int, Boolean>() }
+    val activePercent = if (!state.finished) downloadState?.percent ?: 0 else 0
+    val progress = (state.doneCount * 100f + activePercent) /
+        state.items.size.coerceAtLeast(1) / 100f
+    AppCard {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("批量下载", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            Spacer(Modifier.width(8.dp))
+            Text(
+                "共 ${state.items.size} 条",
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.weight(1f))
+            if (state.finished) {
+                val allFiles = state.items.flatMap { it.files }.filter { it.isNotBlank() }
+                if (allFiles.isNotEmpty()) {
+                    IconAction(Icons.Default.Share, "分享全部文件") { onShare(allFiles) }
+                    IconAction(
+                        Icons.Default.Delete,
+                        "删除这批下载及其文件",
+                        tint = MaterialTheme.colorScheme.error,
+                    ) { onDeleteAll() }
+                }
+                PillTextButton(
+                    text = "关闭",
+                    onClick = onClose,
+                    container = MaterialTheme.colorScheme.surfaceVariant,
+                    content = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                PillTextButton(
+                    text = "取消",
+                    onClick = onCancel,
+                    container = MaterialTheme.colorScheme.surfaceVariant,
+                    content = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        LinearProgressIndicator(
+            progress = { progress.coerceIn(0f, 1f) },
+            modifier = Modifier.fillMaxWidth(),
+            color = MaterialTheme.colorScheme.primary,
+        )
+        Spacer(Modifier.height(6.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "成功 ${state.succeeded}",
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.Medium,
+            )
+            if (state.failed > 0) {
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    "失败 ${state.failed}",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.error,
+                    fontWeight = FontWeight.Medium,
+                )
+            }
+            if (state.cancelled > 0) {
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    "已取消 ${state.cancelled}",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            if (state.skipped > 0) {
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    "已跳过 ${state.skipped}",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Spacer(Modifier.weight(1f))
+            if (state.items.any { it.status == BatchItemStatus.SUCCESS && it.files.isNotEmpty() }) {
+                val allOpen = state.items.indices.all { expanded[it] == true }
+                TextButton(onClick = {
+                    state.items.indices.forEach { expanded[it] = !allOpen }
+                }) { Text(if (allOpen) "收起全部" else "展开全部", fontSize = 11.sp) }
+            }
+        }
+        if (!state.finished) {
+            val activeIndex = state.items.indexOfFirst { it.status == BatchItemStatus.DOWNLOADING }
+                .let { if (it >= 0) it else state.items.indexOfFirst { it.status == BatchItemStatus.PARSING } }
+            if (activeIndex >= 0) {
+                Text(
+                    "正在处理第 ${activeIndex + 1} 条：${
+                        state.items[activeIndex].title.ifBlank {
+                            state.items[activeIndex].url.takeLast(42)
+                        }
+                    }",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        state.items.forEachIndexed { index, item ->
+            val isOpen = expanded[index] == true
+            Spacer(Modifier.height(6.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                PlatformChip(item.platform.label)
+                Spacer(Modifier.width(6.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        item.title.ifBlank { item.url.takeLast(46) },
+                        fontSize = 12.sp,
+                        maxLines = 1,
+                        fontWeight = FontWeight.Medium,
+                    )
+                    Text(
+                        batchStatusText(
+                            item,
+                            if (item.status == BatchItemStatus.DOWNLOADING) downloadState?.percent else null,
+                        ),
+                        fontSize = 11.sp,
+                        maxLines = 2,
+                        color = when (item.status) {
+                            BatchItemStatus.FAILED -> MaterialTheme.colorScheme.error
+                            BatchItemStatus.SUCCESS -> MaterialTheme.colorScheme.primary
+                            else -> MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                    )
+                }
+                if (item.status == BatchItemStatus.SUCCESS && item.files.isNotEmpty()) {
+                    Text(
+                        "${item.files.size} 个文件",
+                        fontSize = 10.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                if (item.status == BatchItemStatus.FAILED) {
+                    TextButton(onClick = { onCopyLink(item.url) }) { Text("复制", fontSize = 11.sp) }
+                }
+                if (item.files.isNotEmpty()) {
+                    IconAction(
+                        if (isOpen) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                        if (isOpen) "收起" else "展开",
+                        boxSize = 24.dp,
+                        iconSize = 16.dp,
+                    ) { expanded[index] = !isOpen }
+                }
+            }
+            if (isOpen && item.files.isNotEmpty()) {
+                FileGallery(
+                    uris = item.files,
+                    names = item.fileNames,
+                    sizes = item.sizes,
+                    selected = null,
+                    onToggleSelected = {},
+                    onPreview = { fileIndex ->
+                        context.startActivity(
+                            MediaPreviewActivity.intent(context, item.files, item.fileNames, item.sizes, fileIndex),
+                        )
+                    },
+                    onOpen = onOpen,
+                    onShare = { uri -> onShare(listOf(uri)) },
+                    onDelete = { uri -> onDeleteFile(uri) },
+                )
+            }
+        }
+    }
+}
+
+/** 批量条目的状态文案（失败原因 + 登录提示） */
+private fun batchStatusText(item: BatchLinkItem, percent: Int?): String {
+    val base = when (item.status) {
+        BatchItemStatus.WAITING -> "等待"
+        BatchItemStatus.PARSING -> "解析中…"
+        BatchItemStatus.QUEUED -> "等待下载"
+        BatchItemStatus.DOWNLOADING -> if (percent != null) "下载中 $percent%" else "下载中…"
+        BatchItemStatus.SUCCESS -> "成功"
+        BatchItemStatus.FAILED -> "失败：${item.message.ifBlank { "未知错误" }}"
+        BatchItemStatus.SKIPPED -> item.message.ifBlank { "已跳过" }
+        BatchItemStatus.CANCELLED -> "已取消"
+    }
+    val needsLogin = item.status == BatchItemStatus.FAILED &&
+        (item.message.contains("登录") || item.message.contains("Cookie", ignoreCase = true))
+    return if (needsLogin) "$base · 请到 设置 → Cookie 管理 登录后重试" else base
 }
 
 /** 统一卡片样式：更大圆角 + 明显阴影 */
